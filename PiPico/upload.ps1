@@ -1,4 +1,4 @@
-param([string]$Uf2, [string]$Port = "COM6")
+param([string]$Uf2, [string]$Port = "COM7")
 
 # Se il Pico non e' gia' in BOOTSEL, lo riavvia aprendo/chiudendo la seriale a 1200 baud
 if (-not (Get-Volume | Where-Object FileSystemLabel -eq 'RPI-RP2')) {

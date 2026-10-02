@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"path": ".."
+		},
+		{
+			"name": "PiPico",
+			"path": "."
+		}
+	],
+	"settings": {}
+}
