@@ -3,3 +3,20 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+
+# Python
+__pycache__/
+*.pyc
+
+# Configurazione locale della GUI e anteprime generate dagli script
+tools/display_config.json
+tools/display_config.txt
+tools/*_preview*.png
+src/*/*_preview.png
+
+# Immagini derivate da opere protette (Fallout, Cyberpunk 2077, Terminator):
+# si rigenerano con gli script in tools/ (vedi README, sezioni Loghi e Sprite)
+src/fallout/logo.h
+src/skynet/logo.h
+src/cyberpunk/logo.h
+src/pipboy/sprites.h

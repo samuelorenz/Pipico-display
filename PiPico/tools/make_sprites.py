@@ -1,4 +1,4 @@
-"""Genera src/sprites.h (maschere alpha a 8 bit) da due immagini di riferimento.
+"""Genera src/pipboy/sprites.h (maschere alpha a 8 bit) da due immagini di riferimento.
 
 Uso:
     python tools/make_sprites.py <screenshot_pipboy.png> <logo_vaulttec.png>
@@ -58,7 +58,7 @@ if __name__ == "__main__":
     vb, lg = vault_boy(sys.argv[1]), logo(sys.argv[2])
     vb.save("tools/preview_vb.png")
     lg.save("tools/preview_logo.png")
-    with open("src/sprites.h", "w") as f:
+    with open("src/pipboy/sprites.h", "w") as f:
         f.write("// Generato da tools/make_sprites.py - non modificare a mano\n#pragma once\n#include <stdint.h>\n\n")
         emit(f, "VB_SPRITE", vb)
         emit(f, "VAULTTEC_LOGO", lg)
