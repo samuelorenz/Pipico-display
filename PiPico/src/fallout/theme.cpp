@@ -228,6 +228,13 @@ static void drawHome() {
       if (pc.net >= 1000) snprintf(b, sizeof(b), "GPU TEMP: %dC   NET: %d.%dM/S", pc.temp, pc.net / 1000, (pc.net % 1000) / 100);
       else                snprintf(b, sizeof(b), "GPU TEMP: %dC   NET: %dK/S", pc.temp, pc.net);
       tprint(6, y, b, 1, pc.temp >= 85 && !blink ? GD : 0); y += 10;
+      if (netExtraLive()) {  // rete divisa in scaricamento / invio e latenza
+        char r1[8], r2[8];
+        fmtRate(r1, sizeof(r1), pcx.down); fmtRate(r2, sizeof(r2), pcx.up);
+        if (pcx.ping >= 0) snprintf(b, sizeof(b), "DN: %s UP: %s  PING: %dMS", r1, r2, pcx.ping);
+        else snprintf(b, sizeof(b), "DN: %s UP: %s  PING: --", r1, r2);
+        tprint(6, y, b); y += 10;
+      }
       int n = snprintf(b, sizeof(b), "UPTIME: %dH", pc.up);
       if (extraLive() && pcx.cpuTemp > 0) n += snprintf(b + n, sizeof(b) - n, "  CPU: %dC", pcx.cpuTemp);
       if (extraLive() && pcx.batt >= 0) snprintf(b + n, sizeof(b) - n, "  BAT: %d%%%s", pcx.batt, pcx.plugged ? "+" : "");
@@ -394,7 +401,7 @@ static void drawGraph() {
   }
   // selettore: la metrica mostrata e' evidenziata in negativo, come una voce di menu
   for (int i = 0; i < MT_COUNT; i++) {
-    int x = 8 + i * 38;
+    int x = 6 + i * 33;
     if (i == m) {
       if (budget > 0) cv.fillRect(x - 3, y - 1, 24, 10, txtCol);
       tprint(x, y, METRIC_SHORT[i], 1, INV);
@@ -502,6 +509,7 @@ void renderFrame() {
   else drawTerm();
   if (on(E_SCANLINES)) applyScanlines();
 
+  alertOverlay(cv, G, frameNo);
   tft.drawRGBBitmap(0, 0, cv.getBuffer(), 240, 240);
   frameNo++;
 }

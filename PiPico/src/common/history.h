@@ -6,11 +6,11 @@
 #include <Arduino.h>
 #include <Adafruit_GFX.h>
 
-enum Metric { MT_CPU, MT_RAM, MT_DSK, MT_GPU, MT_TMP, MT_NET, MT_COUNT };
-static const char *const METRIC_KEY[MT_COUNT]   = {"cpu", "ram", "dsk", "gpu", "tmp", "net"};
-static const char *const METRIC_SHORT[MT_COUNT] = {"CPU", "RAM", "DSK", "GPU", "TMP", "NET"};
-static const char *const METRIC_NAME[MT_COUNT]  = {"CPU LOAD", "RAM USAGE", "DISK USAGE", "GPU LOAD", "GPU TEMP", "NETWORK"};
-static const char *const METRIC_UNIT[MT_COUNT]  = {"%", "%", "%", "%", "C", "K"};
+enum Metric { MT_CPU, MT_RAM, MT_DSK, MT_GPU, MT_TMP, MT_NET, MT_PING, MT_COUNT };
+static const char *const METRIC_KEY[MT_COUNT]   = {"cpu", "ram", "dsk", "gpu", "tmp", "net", "png"};
+static const char *const METRIC_SHORT[MT_COUNT] = {"CPU", "RAM", "DSK", "GPU", "TMP", "NET", "PNG"};
+static const char *const METRIC_NAME[MT_COUNT]  = {"CPU LOAD", "RAM USAGE", "DISK USAGE", "GPU LOAD", "GPU TEMP", "NETWORK", "LATENCY"};
+static const char *const METRIC_UNIT[MT_COUNT]  = {"%", "%", "%", "%", "C", "K", "ms"};
 
 const int HIST_N = 200;  // circa 3 minuti e 20 secondi
 inline uint16_t histV[MT_COUNT][HIST_N];
@@ -19,8 +19,8 @@ inline int graphMetric = MT_CPU;
 inline bool graphAuto = false;
 static const unsigned long GRAPH_AUTO_MS = 8000;  // durata di ogni grafico in rotazione
 
-inline void histPush(int cpu, int ram, int dsk, int gpu, int tmp, int net) {
-  int v[MT_COUNT] = {cpu, ram, dsk, gpu, tmp, net};
+inline void histPush(int cpu, int ram, int dsk, int gpu, int tmp, int net, int ping) {
+  int v[MT_COUNT] = {cpu, ram, dsk, gpu, tmp, net, ping};
   for (int m = 0; m < MT_COUNT; m++) histV[m][histHead] = (uint16_t)constrain(v[m], 0, 65535);
   histHead = (histHead + 1) % HIST_N;
   if (histCount < HIST_N) histCount++;
@@ -31,12 +31,12 @@ inline int histAt(int m, int i) { return histV[m][(histHead - histCount + i + HI
 
 inline int curMetric() { return graphAuto ? (int)((millis() / GRAPH_AUTO_MS) % MT_COUNT) : graphMetric; }
 
-// Fondo scala: 100 per le percentuali, almeno 100 C per la temperatura, automatico per la rete
+// Fondo scala: 100 per le percentuali, almeno 100 C per la temperatura, automatico per rete e ping
 inline int histScale(int m) {
   if (m <= MT_GPU) return 100;
-  int mx = m == MT_TMP ? 100 : 10;
+  int mx = m == MT_TMP ? 100 : m == MT_PING ? 50 : 10;
   for (int i = 0; i < histCount; i++) mx = max(mx, histAt(m, i));
-  if (m == MT_NET) {  // arrotonda a 1 / 2 / 5 x 10^n
+  if (m == MT_NET || m == MT_PING) {  // arrotonda a 1 / 2 / 5 x 10^n
     int p = 1;
     while (p * 10 < mx) p *= 10;
     mx = mx <= p * 2 ? p * 2 : mx <= p * 5 ? p * 5 : p * 10;

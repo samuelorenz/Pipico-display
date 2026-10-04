@@ -1,4 +1,4 @@
-// Interfaccia di un tema grafico. Ogni tema (fallout, skynet, cyberpunk) definisce una
+// Interfaccia di un tema grafico. Ogni tema (fallout, skynet, cyberpunk, alien) definisce una
 // costante Theme; src/main.cpp sceglie quello attivo, gli passa i comandi e ne salva lo stato.
 #pragma once
 #include <Arduino.h>
@@ -24,3 +24,4 @@ struct Theme {
 extern const Theme THEME_FALLOUT;
 extern const Theme THEME_SKYNET;
 extern const Theme THEME_CYBERPUNK;
+extern const Theme THEME_ALIEN;

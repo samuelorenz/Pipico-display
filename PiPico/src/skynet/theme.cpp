@@ -234,7 +234,7 @@ static int statsColumn(bool big) {  // restituisce la y finale
 
 // Testo di analisi in alto a destra: gruppi di righe battute una lettera alla volta
 static void drawAnalysis(int left, bool live) {
-  const int SETS = 4, LINES = 4, PERIOD = 160;
+  const int SETS = 5, LINES = 4, PERIOD = 160;
   int set = (frameNo / PERIOD) % SETS, t = frameNo % PERIOD;
   char l[LINES][28];
   if (live) {
@@ -242,7 +242,7 @@ static void drawAnalysis(int left, bool live) {
     const char *lvl = pcAlarm() ? "CRITICAL" : load < 40 ? "LOW" : load < 75 ? "MODERATE" : "HIGH";
     const char *s[SETS][LINES] = {
       {"SYSTEM ANALYSIS:", "", "", ""}, {"THERMAL SCAN", "", "", ""},
-      {"MEMORY ASSESSMENT", "", "", ""}, {"THREAT ASSESSMENT", "", "", ""}};
+      {"MEMORY ASSESSMENT", "", "", ""}, {"THREAT ASSESSMENT", "", "", ""}, {"NETWORK ANALYSIS", "", "", ""}};
     for (int i = 0; i < LINES; i++) strcpy(l[i], s[set][i]);
     if (set == 0) { snprintf(l[1], 28, "CPU LOAD %d%%", pc.cpu); snprintf(l[2], 28, "GPU LOAD %d%%", pc.gpu); strcpy(l[3], "ASSESSMENT COMPLETE"); }
     if (set == 1) {
@@ -256,12 +256,20 @@ static void drawAnalysis(int left, bool live) {
       if (extraLive() && pcx.proc[0]) { snprintf(l[2], 28, "TARGET: %s", pcx.proc); snprintf(l[3], 28, "CPU USE %d%%", pcx.procPct); }
       else strcpy(l[2], "MISSION: MONITOR HOST");
     }
+    if (set == 4) {
+      char r1[8], r2[8];
+      fmtRate(r1, sizeof(r1), netExtraLive() ? pcx.down : pc.net); fmtRate(r2, sizeof(r2), netExtraLive() ? pcx.up : 0);
+      snprintf(l[1], 28, "DOWN %s  UP %s", r1, r2);
+      if (netExtraLive() && pcx.ping >= 0) snprintf(l[2], 28, "LATENCY %d MS", pcx.ping); else strcpy(l[2], "LATENCY UNKNOWN");
+      if (netExtraLive()) snprintf(l[3], 28, "PROCESSES %d", pcx.procs);
+    }
   } else {
     const char *s[SETS][LINES] = {
       {"ANALYSIS:", "SCAN MODE 43984", "SIZE ASSESSMENT", "ASSESSMENT COMPLETE"},
       {"MATCH SEARCH:", "PATTERN 0.86 ACCEPTED", "FIT PROBABILITY 0.99", ""},
       {"THREAT ASSESSMENT", "SUBJECT NOT ARMED", "PRIORITY: LOW", ""},
-      {"VISUAL OVERRIDE", "SYSTEM SCAN", "ENVIRONMENT: INDOOR", "AUDIO INPUT ACTIVE"}};
+      {"VISUAL OVERRIDE", "SYSTEM SCAN", "ENVIRONMENT: INDOOR", "AUDIO INPUT ACTIVE"},
+      {"NETWORK SCAN:", "HOST LINK: NONE", "LATENCY: UNKNOWN", ""}};
     for (int i = 0; i < LINES; i++) strcpy(l[i], s[set][i]);
   }
   int chars = t * 2;  // due lettere per fotogramma
@@ -397,7 +405,7 @@ void drawGraph() {
 
   // selettore della metrica
   for (int i = 0; i < MT_COUNT; i++) {
-    int x = 8 + i * 38;
+    int x = 6 + i * 33;
     if (i == m && budget > 0) cv.fillRect(x - 3, 22, 24, 11, RED);
     tprint(x, 24, METRIC_SHORT[i], 1, i == m ? BGC : DIM);
   }
@@ -512,6 +520,7 @@ void renderFrame() {
   else if (mode == MODE_GRAPH) drawGraph();
   else drawTerm();
   if (on(E_SCANLINES)) applyScanlines();
+  alertOverlay(cv, RED, frameNo);
   tft.drawRGBBitmap(0, 0, cv.getBuffer(), 240, 240);
   frameNo++;
 }

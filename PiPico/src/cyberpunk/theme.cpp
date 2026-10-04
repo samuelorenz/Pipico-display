@@ -265,7 +265,11 @@ static void drawHud() {
       }
       if (extraLive() && pcx.batt >= 0) {
         snprintf(b, sizeof(b), "BATT   %d%%%s", pcx.batt, pcx.plugged ? " +" : "");
-        tprint(8, y, b, 1, pcx.batt <= 20 && !pcx.plugged && !blink ? RED : YEL);
+        tprint(8, y, b, 1, pcx.batt <= 20 && !pcx.plugged && !blink ? RED : YEL); y += 11;
+      }
+      if (netExtraLive() && pcx.ping >= 0) {
+        snprintf(b, sizeof(b), "PING   %dMS", pcx.ping);
+        tprint(8, y, b, 1, pcx.ping > 150 && !blink ? RED : CYN);
       }
     }
   }
@@ -469,12 +473,12 @@ static void drawGraph() {
 
   // "chip" di selezione: quello attivo e' giallo pieno con l'angolo tagliato
   for (int i = 0; i < MT_COUNT; i++) {
-    int x = 2 + i * 40, y = 17;
+    int x = 2 + i * 34, y = 17;
     if (budget > 0) {
-      if (i == m) { cv.fillRect(x, y, 37, 12, YEL); cv.fillTriangle(x + 31, y, x + 37, y, x + 37, y + 6, BGC); }
-      else        cv.drawRect(x, y, 37, 12, DCYN);
+      if (i == m) { cv.fillRect(x, y, 31, 12, YEL); cv.fillTriangle(x + 25, y, x + 31, y, x + 31, y + 6, BGC); }
+      else        cv.drawRect(x, y, 31, 12, DCYN);
     }
-    tprint(x + 10, y + 3, METRIC_SHORT[i], 1, i == m ? BLK : CYN);
+    tprint(x + 7, y + 3, METRIC_SHORT[i], 1, i == m ? BLK : CYN);
   }
 
   // grafico: giallo per CPU, ciano per RAM / disco / rete, rosso per GPU / temperatura
@@ -574,6 +578,7 @@ void renderFrame() {
   if (on(E_GLITCH) && (bootGlitch || random(0, 40) == 0)) applyGlitch(random(1, 4));
   if (on(E_SCANLINES)) applyScanlines();
 
+  alertOverlay(cv, RED, frameNo);
   tft.drawRGBBitmap(0, 0, cv.getBuffer(), 240, 240);
   frameNo++;
 }

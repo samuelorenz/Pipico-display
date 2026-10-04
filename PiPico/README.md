@@ -1,22 +1,24 @@
 # PiPico Display
 
-Firmware per **Raspberry Pi Pico (RP2040)** che pilota un display TFT **ST7789 240x240** via SPI hardware e lo trasforma in un monitor per il PC a tema cinematografico/videoludico. Un **firmware unico** contiene tre temi e si cambia tema al volo, da seriale, dalla GUI o con un pulsante:
+Firmware per **Raspberry Pi Pico (RP2040)** che pilota un display TFT **ST7789 240x240** via SPI hardware e lo trasforma in un monitor per il PC a tema cinematografico/videoludico. Un **firmware unico** contiene quattro temi e si cambia tema al volo, da seriale, dalla GUI o con un pulsante:
 
 | Tema (`T,<tema>`) | Descrizione | Colore |
 |-------------------|-------------|--------|
 | `fallout` | Terminale **RobCo Industries** di *Fallout*: boot di Fallout 4, monitor di sistema, minigioco di hacking, terminale seriale | verde |
 | `skynet`  | Visione del **T-800** / terminale **Skynet** di *Terminator*: intro con logo, HUD con mirino, codice 6502, analisi, possible responses, terminale seriale | rosso |
 | `cyberpunk` | **Netrunner** di *Cyberpunk 2077*: boot delle ottiche, monitor con quickhack e scanner, minigioco Breach Protocol, terminale seriale | giallo / ciano / rosso |
+| `alien` | **MU-TH-UR 6000** della Nostromo (*Alien*): boot Weyland-Yutani, stato della nave, motion tracker, conversazione con il computer di bordo | ambra |
 
-Tutti i temi hanno una modalità di test da **seriale** (grafico dei numeri ricevuti e testo libero), la schermata **Grafico** delle statistiche e mostrano le **statistiche del PC** in tempo reale (vedi [Statistiche del PC](#statistiche-del-pc-companion)). Il Pico **ricorda** tema, elementi visibili, schermata, nome e grafico anche dopo lo spegnimento. L'upload è automatico, senza premere BOOTSEL (Windows/PowerShell).
+Tutti i temi hanno una modalità di test da **seriale** (grafico dei numeri ricevuti e testo libero), la schermata **Grafico** delle statistiche e mostrano le **statistiche del PC** in tempo reale (vedi [Statistiche del PC](#statistiche-del-pc-companion)). Il Pico **ricorda** tema, elementi visibili, schermata, nome, grafico, soglie di allarme e tempo di spegnimento anche dopo lo spegnimento. L'upload è automatico, senza premere BOOTSEL (Windows/PowerShell).
 
-> Progetto amatoriale senza scopo commerciale. *Fallout*, *RobCo* (Bethesda Softworks), *Terminator*, *Skynet* e *Cyberdyne Systems* sono marchi dei rispettivi proprietari, come *Cyberpunk 2077*, *Night City*, *Kiroshi* e *Netwatch* (CD PROJEKT). Vedi la sezione [Note sui diritti](#note-sui-diritti).
+> Progetto amatoriale senza scopo commerciale. *Fallout*, *RobCo* (Bethesda Softworks), *Terminator*, *Skynet*, *Cyberdyne Systems*, *Alien*, *Weyland-Yutani* e *Nostromo* sono marchi dei rispettivi proprietari, come *Cyberpunk 2077*, *Night City*, *Kiroshi* e *Netwatch* (CD PROJEKT). Vedi la sezione [Note sui diritti](#note-sui-diritti).
 
 ## Hardware
 
 - Raspberry Pi Pico (RP2040)
 - Display TFT ST7789 240x240 (SPI)
 - Cavo USB
+- Facoltativi: due pulsanti, un cicalino piezo e la [custodia stampata in 3D](#custodia-3d)
 
 ### Collegamenti
 
@@ -31,6 +33,14 @@ I numeri sono GPIO, non pin fisici. Il display usa SPI0 in `SPI_MODE3`.
 | RES (RST)  | GP21 | 27 |
 | BL         | GP22 | 29 |
 | VCC / GND  | 3V3 / GND | |
+
+**Componenti facoltativi** (non fanno nulla se non sono collegati):
+
+| Componente | Pico GPIO | Pin fisico | Collegamento |
+|------------|-----------|------------|--------------|
+| Pulsante "tema successivo" | GP14 | 19 | verso GND (pull-up interno) |
+| Pulsante "schermata successiva" | GP15 | 20 | verso GND (pull-up interno) |
+| Cicalino piezo (allarmi) | GP13 | 17 | verso GND |
 
 Se il tuo schermo è 240x320, cambia `tft.init(240, 240, ...)` in `tft.init(240, 320, ...)` in [src/main.cpp](src/main.cpp) (la grafica è disegnata per 240x240).
 
@@ -47,10 +57,11 @@ pio run -t upload               # firmware unico con tutti i temi (env "all", pr
 pio run -e fallout   -t upload  # solo RobCo Industries (firmware piu' piccolo)
 pio run -e skynet    -t upload  # solo Skynet / T-800
 pio run -e cyberpunk -t upload  # solo Cyberpunk 2077
+pio run -e alien     -t upload  # solo Alien (MU-TH-UR 6000)
 pio run                         # solo compilazione
 ```
 
-Il firmware `all` pesa circa 180 KB su 2 MB di flash e usa circa 8% della RAM statica più un canvas condiviso da 115 KB. Gli ambienti con un solo tema compilano il tema con `-DONLY_<TEMA>`; il resto del comportamento (comandi, salvataggio, pulsanti) è identico.
+Il firmware `all` pesa circa 210 KB su 2 MB di flash e usa circa 8% della RAM statica più un canvas condiviso da 115 KB. Gli ambienti con un solo tema compilano il tema con `-DONLY_<TEMA>`; il resto del comportamento (comandi, salvataggio, pulsanti) è identico.
 
 In VS Code puoi scegliere l'ambiente dalla barra di PlatformIO in basso e poi premere la freccia di upload. Se `pio` non è nel PATH di Windows usa l'eseguibile dell'ambiente PlatformIO: `%USERPROFILE%\.platformio\penv\Scripts\pio.exe`.
 
@@ -66,7 +77,7 @@ L'upload usa [upload.ps1](upload.ps1):
 
 | Come | Effetto |
 |------|---------|
-| comando `T,fallout` / `T,skynet` / `T,cyberpunk` / `T,next` | cambia tema (il boot del nuovo tema parte subito) |
+| comando `T,fallout` / `T,skynet` / `T,cyberpunk` / `T,alien` / `T,next` | cambia tema (il boot del nuovo tema parte subito) |
 | menu *Build* della [GUI](#gui-di-debug) | come sopra |
 | pulsante su **GP14** (pin fisico 19) verso GND | tema successivo |
 | pulsante su **GP15** (pin fisico 20) verso GND | schermata successiva del tema attivo |
@@ -125,6 +136,7 @@ Righe di testo a 115200 baud, una per messaggio:
 S,cpu,ram,disco,gpu,tempGpu,netKB,uptimeOre     S,34,62,48,21,55,120,5
 X,tempCpu,batteria,inCarica                     X,62,85,1
 P,processo,cpu                                  P,CHROME,23
+Y,giu,su,discoL,discoS,ping,processi            Y,1200,30,5000,800,24,310
 ```
 
 | Riga | Significato |
@@ -132,8 +144,9 @@ P,processo,cpu                                  P,CHROME,23
 | `S` | percentuali 0-100, temperatura GPU in °C, rete in KB/s e uptime in ore (tutti interi); alimenta anche i [grafici](#grafici-delle-statistiche) |
 | `X` | temperatura CPU in °C (`0` = non disponibile), batteria in % (`-1` = non disponibile, per esempio sul PC fisso), `1` se in carica |
 | `P` | nome (maiuscolo, senza virgole, max 15 caratteri) e percentuale CPU del processo più pesante |
+| `Y` | rete in scaricamento e invio (KB/s), lettura e scrittura del disco (KB/s), latenza in ms (`-1` = non disponibile) e numero di processi |
 
-Le righe `S`, `X` e `P` non cambiano schermata e non compaiono nel log del terminale. Chiunque può quindi scrivere un proprio sender in qualsiasi linguaggio. Il codice che le legge è in [src/common/stats.h](src/common/stats.h), letto una volta sola per tutti i temi.
+Le righe `S`, `X`, `P` e `Y` non cambiano schermata e non compaiono nel log del terminale. Chiunque può quindi scrivere un proprio sender in qualsiasi linguaggio. Il codice che le legge è in [src/common/stats.h](src/common/stats.h), letto una volta sola per tutti i temi.
 
 ### Come compaiono
 
@@ -145,14 +158,24 @@ Le righe `S`, `X` e `P` non cambiano schermata e non compaiono nel log del termi
 | Allarme (CPU o GPU ≥ 90% oppure temperatura ≥ 85 °C) | i segmenti dei valori critici lampeggiano e compare `> WARNING: SYSTEM OVERLOAD` | `THREAT: CRITICAL` lampeggia e la cornice si accende |
 | Reazione al carico | — | il mirino diventa più nervoso con il carico (e più piccolo, nella metà destra) |
 
+### Allarmi
+
+Quando CPU, GPU o temperatura GPU superano la soglia, il display lo segnala in tre modi: il tema reagisce a modo suo (valori che lampeggiano, `THREAT: CRITICAL`, `SPECIAL ORDER 937`...), tutto lo schermo ha un **bordo lampeggiante con gli angoli pieni** e, se è collegato, il **cicalino** fa un bip al secondo.
+
+| Comando | Effetto |
+|---------|---------|
+| `A,<cpu>,<gpu>,<temp>,<cicalino>` | soglie in % / °C e cicalino 0 o 1; `0` disattiva quella soglia. Predefinito: `A,90,90,85,1` |
+
+Le soglie si cambiano anche dal riquadro *Allarme* della [GUI](#gui-di-debug) e vengono salvate nella flash.
+
 ### Grafici delle statistiche
 
-Ogni build ha una schermata **Grafico** con lo storico di **una statistica alla volta**: CPU, RAM, disco, GPU, temperatura GPU o rete. In alternativa c'è la rotazione automatica, che cambia grafico ogni 8 secondi. Il Pico tiene in memoria gli ultimi **200 campioni** (circa 3 minuti e 20 secondi, uno per ogni riga `S,...`) per tutte e sei le statistiche, quindi cambiando grafico la curva è subito piena.
+Ogni build ha una schermata **Grafico** con lo storico di **una statistica alla volta**: CPU, RAM, disco, GPU, temperatura GPU, rete o latenza (ping). In alternativa c'è la rotazione automatica, che cambia grafico ogni 8 secondi. Il Pico tiene in memoria gli ultimi **200 campioni** (circa 3 minuti e 20 secondi, uno per ogni riga `S,...`) per tutte e sette le statistiche, quindi cambiando grafico la curva è subito piena.
 
 | Comando | Effetto |
 |---------|---------|
 | `M,graph` (oppure `graph`) | mostra la schermata Grafico |
-| `G,cpu` / `G,ram` / `G,dsk` / `G,gpu` / `G,tmp` / `G,net` | sceglie la statistica |
+| `G,cpu` / `G,ram` / `G,dsk` / `G,gpu` / `G,tmp` / `G,net` / `G,png` | sceglie la statistica |
 | `G,auto` | rotazione automatica ogni 8 secondi |
 
 Il fondo scala è 100 per le percentuali, almeno 100 °C per la temperatura e automatico per la rete (arrotondato a 1, 2 o 5 × 10ⁿ KB/s).
@@ -170,6 +193,7 @@ Il codice comune (storico, scala, statistiche, tendenza, disegno della curva, co
 - GPU e temperatura GPU si leggono con `nvidia-smi` (driver NVIDIA). Senza, restano a 0.
 - **Temperatura CPU:** Windows non la espone in modo semplice. Apri [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) e attiva *Options → Remote Web Server → Run* (porta 8085): `pc_stats.py` la legge da `http://127.0.0.1:8085/data.json`. Se non c'è, riprova ogni 30 secondi e la temperatura resta a 0 (non mostrata).
 - **Batteria:** compare solo sui portatili.
+- **Ping:** tempo per aprire una connessione TCP verso `1.1.1.1:443`, misurato ogni 3 secondi. Se il PC è offline vale `-1`.
 - **Processo più pesante:** la percentuale è normalizzata sul numero di core (100% = tutta la CPU). Si vede nel tema RobCo (`> TOP: ...`), in Skynet (nel testo di analisi e come `TARGET`) e in Cyberpunk (sotto lo scanner).
 - Lo script tiene aperta la porta seriale. [upload.ps1](upload.ps1) lo ferma e lo rilancia da solo a ogni upload. Per usare il Serial Monitor chiudi lo script.
 
@@ -239,10 +263,11 @@ python tools/display_gui.py
 
 - **Sincronizzata con il Pico:** quando si collega legge lo stato salvato sul Pico (comandi `?` e `D`) e imposta da sola tema, caselle, schermata, nome, grafico e tempo di spegnimento. Quello che vedi nella GUI è quello che c'è sul display.
 - **Build:** il menu cambia tema sul Pico (`T,<tema>`); le caselle si aggiornano quando il Pico risponde.
-- **Schermata:** quelle del tema (RobCo: automatica, monitor, hacking, terminale, grafico; Skynet: HUD, terminale, grafico; Cyberpunk: automatica, monitor, Breach Protocol, terminale, grafico), più i pulsanti *Rivedi il boot* e *Pulisci terminale*.
+- **Schermata:** quelle del tema (RobCo: automatica, monitor, hacking, terminale, grafico; Skynet: HUD, terminale, grafico; Cyberpunk: automatica, monitor, Breach Protocol, terminale, grafico; Alien: automatica, stato della nave, motion tracker, terminale, grafico), più i pulsanti *Rivedi il boot* e *Pulisci terminale*.
 - **Grafico:** menu con la statistica da mostrare (o la rotazione automatica). Scegliendola, il display passa alla schermata Grafico.
 - **Elementi:** una casella per ogni contenuto, statistica ed effetto. Ogni modifica arriva subito al display. Ci sono anche i pulsanti *Tutto acceso* e *Tutto spento*.
-- **Dati:** nome (amministratore per RobCo, bersaglio per Skynet, netrunner per Cyberpunk), **tempo di spegnimento dello schermo**, invio delle statistiche del PC (sostituisce `pc_stats.py`; mostra anche temperatura CPU, batteria e processo più pesante) e una riga libera da inviare al Pico.
+- **Allarme:** soglie di CPU, GPU e temperatura GPU e casella del cicalino (comando `A,...`).
+- **Dati:** nome (amministratore per RobCo, bersaglio per Skynet, netrunner per Cyberpunk, ufficiale per Alien), **tempo di spegnimento dello schermo**, invio delle statistiche del PC (sostituisce `pc_stats.py`; mostra anche temperatura CPU, batteria e processo più pesante) e una riga libera da inviare al Pico.
 - **Note per Claude:** spazio per scrivere cosa ti piace e cosa cambiare.
 - **Salva configurazione:** scrive `tools/display_config.json` (una sezione per tema) e `tools/display_config.txt`.
 - **Copia per Claude:** copia negli appunti un riepilogo (tema, schermata, grafico, maschera, elementi da TENERE e da TOGLIERE, note) da incollare in chat, così i valori scelti possono diventare quelli predefiniti del firmware.
@@ -348,11 +373,59 @@ In fondo a tutte le schermate scorre il notiziario `N54 NEWS` con sotto la riga 
 
 Esempio: `C,65535` accende tutto (predefinito).
 
+## Tema `alien`: MU-TH-UR 6000
+
+Testo ambra su monitor a tubo catodico, come il computer di bordo della Nostromo. Ogni elemento si accende e si spegne in tempo reale dalla [GUI di debug](#gui-di-debug).
+
+### Boot (a ogni accensione)
+
+Righe scritte lettera per lettera (`WEYLAND-YUTANI CORP`, `COMMERCIAL TOWING VEHICLE NOSTROMO`, `MU/TH/UR 6000 - INTERFACE 2037`, controlli di memoria, supporto vitale, ibernazione, navigazione, `SEVEN CREW IN HYPERSLEEP`), poi il **logo Weyland-Yutani** (la W gialla con i rombi più scuri) in dissolvenza ambra, con `INTERFACE 2037 READY FOR INQUIRY`.
+
+### Schermate
+
+| Schermata | Contenuto |
+|-----------|-----------|
+| **Stato della nave** (`system`) | Con i dati dal PC: `SHIP SYSTEMS STATUS` con le statistiche rinominate come le parti della nave, cioè `REACTOR` (CPU), `LIFE SUPPORT` (RAM), `CARGO HOLD` (disco) e `MAIN DRIVE` (GPU), ciascuna con barra a blocchi e percentuale. Sotto: `HULL TEMP` (e `CORE`), `COMMS DN/UP` con `LAG`, `HYPERSLEEP CYCLE` (uptime) e `CELL` (batteria). Il processo più pesante diventa `> UNKNOWN LIFEFORM: <nome>`, e sotto `>WHAT ARE MY ORDERS` con la risposta: `MAINTAIN COURSE. ALL SYSTEMS NOMINAL`, oppure in allarme `SPECIAL ORDER 937: CREW EXPENDABLE`. Senza dati: una conversazione con MU-TH-UR a rotazione (`>WHAT IS THE STATE OF THE CREW`…) |
+| **Motion tracker** (`tracker`) | Il radar M314: tre anelli con `10M` e `20M`, croce, tacche ogni 30°, raggio che ruota con la coda che sfuma e **contatti** che compaiono quando il raggio li raggiunge. Più il PC è carico, più contatti ci sono (da 1 a 8). In basso `CONTACTS`, `CLOSEST` e, se uno è vicino o c'è un allarme, `!! PROXIMITY ALERT !!` |
+| **Terminale** (`term`) | Log delle righe ricevute da seriale e grafico dei numeri |
+| **Grafico** (`graph`) | `-TELEMETRY: CPU LOAD-` con la stessa grafica degli altri temi, in ambra |
+| **Automatica** (`auto`, predefinita) | Stato della nave se arrivano i dati, altrimenti motion tracker |
+
+### Comandi seriali
+
+| Comando | Effetto |
+|---------|---------|
+| `C,<maschera>` | elementi visibili, bit per bit (vedi tabella sotto) |
+| `M,auto` / `M,system` / `M,tracker` / `M,term` / `M,graph` | schermata |
+| `M,boot` oppure `intro` | rivede il boot |
+| `N,<nome>` | nome dell'ufficiale (`OFFICER: <nome>` nella conversazione) |
+| `system`, `tracker`, `graph`, `auto` | come `M,...` |
+| un numero / testo libero / `clear` | come nel terminale degli altri temi |
+
+| Bit | Elemento | Bit | Elemento |
+|-----|----------|-----|----------|
+| 0 | intestazione Weyland-Yutani | 8 | prompt con cursore |
+| 1 | titolo e linea `====` | 9 | scanline |
+| 2 | REACTOR (CPU) | 10 | barra di scansione |
+| 3 | LIFE SUPPORT (RAM) | 11 | bagliore |
+| 4 | CARGO HOLD (disco) | 12 | sfarfallio |
+| 5 | MAIN DRIVE (GPU) | 13 | scrittura progressiva |
+| 6 | info (temperature, comunicazioni, ibernazione) | 14 | logo nel boot |
+| 7 | conversazione / righe di stato | 15 | contatti sul motion tracker |
+
+Esempio: `C,65535` accende tutto (predefinito).
+
+## Custodia 3D
+
+[case/pipico_case.scad](case/pipico_case.scad) è una custodia parametrica per OpenSCAD in due pezzi: **fronte** (finestra sul display, tasca per il circuito stampato, quattro colonnine per le viti) e **retro** (colonnine per il Pico, foro per il cavo micro-USB in basso, due fori da 6 mm per i pulsanti sul lato e un foro per il cicalino). Apri il file con [OpenSCAD](https://openscad.org), scegli `part = "front"`, `"back"` o `"both"`, premi F6 ed esporta in STL.
+
+> **Non è stata renderizzata né stampata.** I moduli ST7789 variano di qualche millimetro: misura il tuo con un calibro e cambia `disp_w`, `disp_h`, `disp_t`, `view_w`, `view_h` e `view_top` in cima al file. Prima della stampa definitiva prova una stampa veloce della sola parte frontale per controllare la finestra.
+
 ## Prestazioni
 
 - Per impostazione predefinita la libreria Adafruit usa SPI a **8 MHz** e un `fillScreen` completo costa circa 115 ms, per cui il display sembra lento. I firmware impostano `tft.setSPISpeed(40000000)` (40 MHz). Se vedi pixel sporchi o schermo instabile abbassa a 32 MHz; con cavi corti puoi provare fino a 62.5 MHz.
 - Le animazioni sono disegnate **fuori schermo** su un `GFXcanvas16` 240x240 (circa 115 KB di RAM) e inviate al display in un unico blocco con `drawRGBBitmap`: niente sfarfallio e circa 30-40 fps.
-- Uso di memoria: firmware `all` circa 180 KB di flash su 2 MB (8,5%) e circa 20 KB di RAM statica, più il canvas condiviso da 115 KB allocato all'avvio. Un solo tema: circa 96 KB (`cyberpunk`), 101 KB (`fallout`) o 120 KB (`skynet`).
+- Uso di memoria: firmware `all` circa 210 KB di flash su 2 MB (10%) e circa 22 KB di RAM statica, più il canvas condiviso da 115 KB allocato all'avvio. Un solo tema: circa 100 KB (`cyberpunk`, `alien`, `fallout`) o 125 KB (`skynet`).
 - Le impostazioni salvate occupano un settore della flash (emulazione EEPROM, 256 byte usati). La scrittura blocca il Pico per qualche decina di millisecondi, per questo avviene solo 3 secondi dopo un cambiamento e non a ogni fotogramma.
 
 ## Loghi
@@ -364,8 +437,9 @@ Ogni build mostra nel boot il logo del proprio mondo, salvato come **maschera al
 | `fallout` | RobCo Industries (versione di *Fallout 76*) | [src/fallout/logo.h](src/fallout/logo.h) | 220 x 104 | verde fosforo |
 | `skynet` | Skynet / Cyberdyne Systems | [src/skynet/logo.h](src/skynet/logo.h) | 236 x 165 | rosso, con glitch |
 | `cyberpunk` | Arasaka: scritta e stemma separati | [src/cyberpunk/logo.h](src/cyberpunk/logo.h) | 232 x 25 e 96 x 95 | rosso Arasaka + copia ciano |
+| `alien` | Weyland-Yutani (dal wiki di Alien: `Weyland_Yutani_Transp.png`) | [src/alien/logo.h](src/alien/logo.h) | 224 x 83 | ambra, rombi più scuri |
 
-I loghi RobCo e Arasaka vengono dai wiki di Fallout e Cyberpunk 2077 (file `FO76 Robco Logo.png` e `Arasaka Logo CP2077.png`). Il logo Skynet viene da un'immagine fornita a mano.
+I loghi RobCo, Arasaka e Weyland-Yutani vengono dai wiki di Fallout e Cyberpunk 2077 (file `FO76 Robco Logo.png` e `Arasaka Logo CP2077.png`). Il logo Skynet viene da un'immagine fornita a mano.
 
 ### Rigenerare un logo
 
@@ -375,6 +449,7 @@ I loghi RobCo e Arasaka vengono dai wiki di Fallout e Cyberpunk 2077 (file `FO76
 python tools/make_logo.py robco.png   src/fallout/logo.h   ROBCO_LOGO     220 110
 python tools/make_logo.py arasaka.png src/cyberpunk/logo.h ARASAKA_LOGO   232 40
 python tools/make_logo.py arasaka.png src/cyberpunk/logo.h ARASAKA_EMBLEM 96 96 --crop 0,425,230,655 --append
+python tools/make_logo.py weyland.png src/alien/logo.h WY_LOGO 224 110 --dim-gray
 python tools/make_skynet_logo.py <logo_skynet.png>
 ```
 
@@ -388,7 +463,7 @@ upload.ps1                 upload automatico (UF2 su RPI-RP2); ferma e rilancia 
 src/main.cpp               firmware unico: seriale, comandi comuni, scelta del tema, pulsanti, flash, retroilluminazione
 src/common/shared.h|cpp    display (tft) e canvas 240x240 condiviso
 src/common/theme.h         interfaccia di un tema (begin, tick, handle, stato, schermata successiva, boot)
-src/common/stats.h         dati dal PC (righe S, X, P), letti una volta per tutti i temi
+src/common/stats.h         dati dal PC (righe S, X, P, Y), soglie di allarme e overlay, letti una volta per tutti i temi
 src/common/history.h       storico delle statistiche e disegno dei grafici
 src/fallout/theme.cpp      tema RobCo: boot, monitor, hacking, terminale, grafico
 src/fallout/logo.h         logo RobCo Industries (generato)
@@ -396,25 +471,28 @@ src/skynet/theme.cpp       tema Skynet: intro, HUD, terminale, grafico
 src/skynet/logo.h          logo Skynet (generato)
 src/cyberpunk/theme.cpp    tema Cyberpunk: boot, monitor, Breach Protocol, terminale, grafico
 src/cyberpunk/logo.h       logo e stemma Arasaka (generati)
+src/alien/theme.cpp        tema Alien: boot, stato della nave, motion tracker, conversazione, grafico
+src/alien/logo.h           logo Weyland-Yutani (generato)
+case/pipico_case.scad      custodia 3D parametrica (OpenSCAD)
 tools/pc_stats.py          invia le statistiche del PC al Pico
 tools/autostart.ps1        installa/rimuove l'avvio automatico di pc_stats.py con Windows
 tools/display_gui.py       GUI di debug (elementi, schermate, statistiche)
 tools/display_config.*     configurazione salvata dalla GUI (generata)
-tools/make_logo.py         generatore generico di loghi (RobCo, Arasaka)
+tools/make_logo.py         generatore generico di loghi (RobCo, Arasaka, Weyland-Yutani)
 tools/make_skynet_logo.py  generatore del logo Skynet
 tools/requirements.txt     dipendenze Python degli script in tools/
 ```
 
 Ogni tema è un file `theme.cpp` con tutto il suo codice in un `namespace` anonimo (così i temi non si disturbano tra loro) e una costante `Theme` in fondo (`THEME_FALLOUT`, ...) che `src/main.cpp` usa per avviarlo, passargli i comandi, salvarne lo stato e disegnarlo. Tutti i temi disegnano sullo stesso canvas condiviso, quindi aggiungerne uno non costa RAM.
 
-**Aggiungere un nuovo tema:** crea `src/<nome>/theme.cpp` copiando la struttura di uno esistente (funzioni `thBegin`, `thTick`, `thGetState`, `thSetState`, `thNext`, `thReboot` e la costante `Theme`), dichiara `extern const Theme THEME_<NOME>` in [src/common/theme.h](src/common/theme.h), aggiungilo all'elenco `THEMES` in `src/main.cpp`, nello `slotOf()` (massimo 3 temi nello stato salvato: aumenta `Saved::st`) e un `[env:<nome>]` in `platformio.ini`.
+**Aggiungere un nuovo tema:** crea `src/<nome>/theme.cpp` copiando la struttura di uno esistente (funzioni `thBegin`, `thTick`, `thGetState`, `thSetState`, `thNext`, `thReboot` e la costante `Theme`), dichiara `extern const Theme THEME_<NOME>` in [src/common/theme.h](src/common/theme.h), aggiungilo all'elenco `THEMES` in `src/main.cpp`, nello `slotOf()` (massimo 4 temi nello stato salvato: aumenta `Saved::st` e l'elenco `ids` in `slotOf()`, e cambia `MAGIC`) e un `[env:<nome>]` in `platformio.ini`.
 
 ### Organizzazione di `src/main.cpp`
 
 | Funzione | Ruolo |
 |----------|-------|
 | `setup()` / `loop()` | inizializza lo schermo, carica le impostazioni, attiva il tema; legge seriale e pulsanti, spegne la retroilluminazione, salva, chiama `tick()` del tema |
-| `handleLine()` | comandi comuni (`?`, `D`, `T,`, `B,`, `G,`, `K,reset`, righe S/X/P); il resto va al tema attivo |
+| `handleLine()` | comandi comuni (`?`, `D`, `T,`, `A,`, `B,`, `G,`, `K,reset`, righe S/X/P/Y); il resto va al tema attivo |
 | `activate()` | cambia tema e risponde `ID,<tema>` |
 | `snapshot()` / `checkDirty()` / `flushSave()` / `loadSettings()` | stato salvato nella flash (emulazione EEPROM) |
 
@@ -468,6 +546,18 @@ Ogni tema è un file `theme.cpp` con tutto il suo codice in un `namespace` anoni
 | `applyGlitch()` / `applyScanlines()` | fasce orizzontali spostate e scanline sul fotogramma |
 | `handleLine()` | interpreta i comandi del tema (`C,`, `M,`, `N,`, testo); i comandi comuni sono in `src/main.cpp` |
 
+### Organizzazione di `src/alien/theme.cpp`
+
+| Funzione | Ruolo |
+|----------|-------|
+| `renderFrame()` | sceglie la schermata, prepara sfondo ed effetti, disegna e invia il fotogramma |
+| `drawBoot()` / `blitMask()` | boot Weyland-Yutani e logo |
+| `drawSystem()` / `statRow()` / `drawConvo()` | stato della nave e conversazione con MU-TH-UR |
+| `drawTracker()` | motion tracker: anelli, raggio con coda, contatti |
+| `drawGraph()` / `drawTerm()` / `addLog()` | grafico delle statistiche e terminale seriale |
+| `drawBackground()` / `applyScanlines()` | bagliore, barra di scansione e scanline |
+| `tprint()` / `tcenter()` | testo con scrittura progressiva |
+
 ## Risoluzione problemi
 
 | Problema | Soluzione |
@@ -476,6 +566,7 @@ Ogni tema è un file `theme.cpp` con tutto il suo codice in un `namespace` anoni
 | Upload fallito / "RPI-RP2 non trovata" | tieni premuto BOOTSEL e ricollega il cavo; chiudi il Serial Monitor |
 | La porta COM è cambiata | l'upload la trova da solo; per il monitor aggiorna `monitor_port` in `platformio.ini` |
 | Le statistiche non compaiono | controlla che `pc_stats.py` sia in esecuzione (Gestione attività, `pythonw.exe`); l'upload lo rilancia da solo. Il display torna offline dopo 4 secondi senza dati |
+| Il cicalino non suona | collegalo tra GP13 (pin fisico 17) e GND; controlla che `A,...,1` abbia il quarto valore a 1 e che l'allarme sia attivo (`A,1,1,1,1` lo fa scattare subito con qualsiasi carico) |
 | Lo schermo è spento | si è spento per inattività (`B,<secondi>`): manda un comando o premi un pulsante. `B,0` disattiva lo spegnimento |
 | Il Pico parte con impostazioni strane | `K,reset` dalla seriale ripristina i valori di fabbrica |
 | La temperatura CPU non compare | serve LibreHardwareMonitor con il Remote Web Server attivo (vedi [Note](#note)) |
@@ -488,6 +579,6 @@ Ogni tema è un file `theme.cpp` con tutto il suo codice in un `namespace` anoni
 
 ## Note sui diritti
 
-Le interfacce sono disegnate dal codice. I loghi (RobCo Industries, Skynet, Arasaka) derivano invece da immagini dei videogiochi e del film: *Fallout* © Bethesda Softworks, *Cyberpunk 2077* © CD PROJEKT, *Terminator* © dei rispettivi titolari. I testi sono solo riferimenti alle opere. Tutto è usato per un progetto personale e amatoriale, senza scopo commerciale.
+Le interfacce sono disegnate dal codice. I loghi (RobCo Industries, Skynet, Arasaka, Weyland-Yutani) derivano invece da immagini dei videogiochi e del film: *Fallout* © Bethesda Softworks, *Cyberpunk 2077* © CD PROJEKT, *Terminator* e *Alien* © dei rispettivi titolari (*Alien* © 20th Century Studios). I testi sono solo riferimenti alle opere. Tutto è usato per un progetto personale e amatoriale, senza scopo commerciale.
 
-I file generati con le immagini (`src/fallout/logo.h`, `src/skynet/logo.h`, `src/cyberpunk/logo.h`) sono **esclusi dal repository** tramite `.gitignore`, perché derivano da opere protette. Restano sul tuo PC; chi clona il repository deve generarli con gli script in `tools/` e le proprie immagini prima di compilare (vedi [Loghi](#loghi)). Per includerli comunque, togli quelle righe da `.gitignore`. Il codice del firmware è tuo e puoi licenziarlo come preferisci.
+I file generati con le immagini (`src/fallout/logo.h`, `src/skynet/logo.h`, `src/cyberpunk/logo.h`, `src/alien/logo.h`) sono **esclusi dal repository** tramite `.gitignore`, perché derivano da opere protette. Restano sul tuo PC; chi clona il repository deve generarli con gli script in `tools/` e le proprie immagini prima di compilare (vedi [Loghi](#loghi)). Per includerli comunque, togli quelle righe da `.gitignore`. Il codice del firmware è tuo e puoi licenziarlo come preferisci.

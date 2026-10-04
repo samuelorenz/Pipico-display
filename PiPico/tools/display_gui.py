@@ -1,4 +1,4 @@
-"""GUI di debug per il display (temi fallout, skynet e cyberpunk).
+"""GUI di debug per il display (temi fallout, skynet, cyberpunk e alien).
 
 Permette di accendere/spegnere ogni elemento ed effetto del display in tempo reale,
 scegliere la schermata, inviare le statistiche del PC e salvare/copiare la configurazione
@@ -127,6 +127,35 @@ BUILDS = {
             (14, "typeon",     "Scrittura progressiva del testo",                "Effetti"),
         ],
     },
+    "alien": {
+        "title": "Alien MU-TH-UR 6000 (alien)",
+        "name_label": "Nome ufficiale:",
+        "screens": [
+            ("auto", "Automatica (nave se arrivano dati, altrimenti tracker)"),
+            ("system", "Stato della nave"),
+            ("tracker", "Motion tracker"),
+            ("term", "Terminale seriale"),
+            ("graph", "Grafico statistiche"),
+        ],
+        "elements": [
+            (14, "logo",      "Logo Weyland-Yutani nel boot",                    "Contenuti"),
+            (0,  "header",    "Intestazione Weyland-Yutani",                     "Contenuti"),
+            (1,  "title",     "Titolo sezione e linea ====",                     "Contenuti"),
+            (7,  "log",       "Conversazione / righe di stato",                  "Contenuti"),
+            (8,  "cursor",    "Prompt con cursore lampeggiante",                 "Contenuti"),
+            (15, "blips",     "Contatti sul motion tracker",                     "Contenuti"),
+            (2,  "cpu",       "REACTOR (CPU)",                                   "Statistiche"),
+            (3,  "ram",       "LIFE SUPPORT (RAM)",                              "Statistiche"),
+            (4,  "dsk",       "CARGO HOLD (disco)",                              "Statistiche"),
+            (5,  "gpu",       "MAIN DRIVE (GPU)",                                "Statistiche"),
+            (6,  "info",      "Temperature, comunicazioni, ibernazione",         "Statistiche"),
+            (9,  "scanlines", "Scanline (righe scure alternate)",                "Effetti CRT"),
+            (10, "scanbar",   "Barra di scansione che scende",                   "Effetti CRT"),
+            (11, "glow",      "Bagliore centrale / bordi scuri",                 "Effetti CRT"),
+            (12, "flicker",   "Sfarfallio del fosforo",                          "Effetti CRT"),
+            (13, "typeon",    "Scrittura progressiva del testo",                 "Effetti CRT"),
+        ],
+    },
 }
 
 # Grafico della schermata "graph" (comando G,<chiave>)
@@ -138,6 +167,7 @@ GRAPHS = [
     ("gpu", "GPU"),
     ("tmp", "Temperatura GPU"),
     ("net", "Rete"),
+    ("png", "Latenza (ping)"),
 ]
 
 
@@ -179,6 +209,8 @@ class App:
         self.el_vars, self.screen, self.name = {}, tk.StringVar(), tk.StringVar()
         self.graph = tk.StringVar()
         self.off_var = tk.IntVar(value=300)
+        self.al_cpu, self.al_gpu, self.al_temp = tk.IntVar(value=90), tk.IntVar(value=90), tk.IntVar(value=85)
+        self.al_beep = tk.BooleanVar(value=True)
         self.state_seen = False
         self.stopped_stats = stop_pc_stats()
 
@@ -227,6 +259,13 @@ class App:
         ttk.Label(ro, text="Spegni lo schermo dopo (s, 0 = mai):").pack(side="left")
         ttk.Spinbox(ro, from_=0, to=3600, increment=30, textvariable=self.off_var, width=6).pack(side="left", padx=4)
         ttk.Button(ro, text="Imposta", command=self.send_off).pack(side="left")
+        ra = ttk.LabelFrame(nf, text="Allarme (0 = soglia disattivata)")
+        ra.pack(fill="x", pady=2)
+        for label, var, hi in (("CPU %", self.al_cpu, 100), ("GPU %", self.al_gpu, 100), ("Temp. GPU C", self.al_temp, 150)):
+            ttk.Label(ra, text=label).pack(side="left", padx=(4, 0))
+            ttk.Spinbox(ra, from_=0, to=hi, textvariable=var, width=4).pack(side="left", padx=(2, 4))
+        ttk.Checkbutton(ra, text="Cicalino (GP13)", variable=self.al_beep).pack(side="left", padx=4)
+        ttk.Button(ra, text="Imposta", command=self.send_alarm).pack(side="left", padx=4)
         rg = ttk.Frame(nf)
         rg.pack(fill="x", pady=2)
         ttk.Label(rg, text="Grafico:").pack(side="left")
@@ -404,11 +443,11 @@ class App:
             self.send_all()
 
     def apply_state(self, msg):
-        """STATE,tema,elementi,schermata,spegnimento,metrica,auto,nome: imposta la GUI come il Pico."""
-        p = msg.split(",", 7)
-        if len(p) < 8:
+        """STATE,tema,elementi,schermata,spegnimento,metrica,auto,cpu,gpu,temp,cicalino,nome: imposta la GUI come il Pico."""
+        p = msg.split(",", 11)
+        if len(p) < 12:
             return
-        _, tid, flags, screen, off, gm, ga, name = p
+        _, tid, flags, screen, off, gm, ga, ac, ag, at, ab, name = p
         if tid not in BUILDS:
             return
         if tid != self.build.get():
@@ -423,13 +462,20 @@ class App:
             self.screen.set(screens[scr])
         self.off_var.set(int(off))
         keys = [k for k, _ in GRAPHS]
-        metric = ["cpu", "ram", "dsk", "gpu", "tmp", "net"][min(int(gm), 5)]
+        metric = ["cpu", "ram", "dsk", "gpu", "tmp", "net", "png"][min(int(gm), 6)]
+        self.al_cpu.set(int(ac)); self.al_gpu.set(int(ag)); self.al_temp.set(int(at)); self.al_beep.set(bool(int(ab)))
         self.graph.set("auto" if int(ga) else metric)
         self.graph_combo.current(keys.index(self.graph.get()))
         if name:
             self.name.set(name)
         self.state_seen = True
         self.logmsg("Stato letto dal Pico: caselle aggiornate")
+
+    def send_alarm(self):
+        try:
+            self.send(f"A,{int(self.al_cpu.get())},{int(self.al_gpu.get())},{int(self.al_temp.get())},{1 if self.al_beep.get() else 0}")
+        except tk.TclError:
+            pass
 
     def send_off(self):
         try:

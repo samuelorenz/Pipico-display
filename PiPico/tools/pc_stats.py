@@ -4,6 +4,7 @@ Righe inviate:
     S,cpu%,ram%,disco%,gpu%,tempGpu,netKB/s,uptimeOre      es. S,34,62,48,21,55,120,5
     X,tempCpu,batteria%,inCarica                           es. X,62,85,1   (0 / -1 = non disponibile)
     P,processo,cpu%                                        es. P,CHROME,23 (processo che usa piu' CPU)
+    Y,giu,su,discoLett,discoScritt,ping,processi           es. Y,120,8,300,40,12,310 (KB/s, ms; ping -1 = n.d.)
 
 Uso:
     python tools/pc_stats.py                 # trova da solo la porta del Pico
@@ -20,8 +21,10 @@ import argparse
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 
@@ -76,9 +79,24 @@ class Collector:
         self.lhm_temp = 0
         self.lhm_at = 0.0
         self.summary = "-"
+        self.ping = -1
+        self.last_disk = psutil.disk_io_counters()
+        threading.Thread(target=self._ping_loop, daemon=True).start()
         psutil.cpu_percent(None)  # la prima chiamata restituisce 0: la scarto
         for p in psutil.process_iter(["cpu_percent"]):
             pass
+
+    def _ping_loop(self):
+        """Latenza in ms: tempo per aprire una connessione TCP verso 1.1.1.1:443, ogni 3 secondi."""
+        while True:
+            try:
+                t0 = time.perf_counter()
+                with socket.create_connection(("1.1.1.1", 443), timeout=1.0):
+                    pass
+                self.ping = int((time.perf_counter() - t0) * 1000)
+            except OSError:
+                self.ping = -1
+            time.sleep(3)
 
     def cpu_temp(self):
         """Temperatura CPU da LibreHardwareMonitor, se il suo web server e' attivo."""
@@ -116,8 +134,16 @@ class Collector:
     def lines(self):
         now = time.time()
         net = psutil.net_io_counters()
-        kbs = int((net.bytes_recv + net.bytes_sent - self.last_net.bytes_recv - self.last_net.bytes_sent)
-                  / 1024 / max(now - self.last_t, 0.1))
+        dt = max(now - self.last_t, 0.1)
+        dn = int((net.bytes_recv - self.last_net.bytes_recv) / 1024 / dt)
+        upk = int((net.bytes_sent - self.last_net.bytes_sent) / 1024 / dt)
+        kbs = dn + upk
+        dio = psutil.disk_io_counters()
+        dr = dw = 0
+        if dio and self.last_disk:
+            dr = int((dio.read_bytes - self.last_disk.read_bytes) / 1024 / dt)
+            dw = int((dio.write_bytes - self.last_disk.write_bytes) / 1024 / dt)
+        self.last_disk = dio
         self.last_net, self.last_t = net, now
         gpu, gtemp = gpu_stats()
         cpu = int(psutil.cpu_percent(None))
@@ -132,7 +158,11 @@ class Collector:
         self.summary = "CPU {}%  RAM {}%  DSK {}%  GPU {}%  {}C  NET {}K/s  UP {}h".format(cpu, ram, dsk, gpu, gtemp, kbs, up)
         self.summary += "\nCPU temp {}  batteria {}  top: {} {}%".format(
             f"{ctemp}C" if ctemp else "n.d.", f"{batt}%" if batt >= 0 else "n.d.", proc or "-", ppct)
-        out = [f"S,{cpu},{ram},{dsk},{gpu},{gtemp},{kbs},{up}", f"X,{ctemp},{batt},{plug}"]
+        procs = len(psutil.pids())
+        self.summary += "\nrete giu {}K su {}K  disco R {}K W {}K  ping {}  processi {}".format(
+            dn, upk, dr, dw, f"{self.ping}ms" if self.ping >= 0 else "n.d.", procs)
+        out = [f"S,{cpu},{ram},{dsk},{gpu},{gtemp},{kbs},{up}", f"X,{ctemp},{batt},{plug}",
+               f"Y,{max(dn, 0)},{max(upk, 0)},{max(dr, 0)},{max(dw, 0)},{self.ping},{procs}"]
         if proc:
             out.append(f"P,{proc},{ppct}")
         return out
