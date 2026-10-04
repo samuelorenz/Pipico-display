@@ -123,7 +123,7 @@ static void drawLogo(float k, bool glitch) {
       cv.drawPixel(x0 + x + off, y0 + y, tft.color565(255 * f, 40 * f, 30 * f));
     }
   }
-  tft.drawRGBBitmap(0, 0, cv.getBuffer(), 240, 240);
+  blitCanvas(cv);
 }
 
 // ---------- Intro ----------
@@ -521,7 +521,7 @@ void renderFrame() {
   else drawTerm();
   if (on(E_SCANLINES)) applyScanlines();
   alertOverlay(cv, RED, frameNo);
-  tft.drawRGBBitmap(0, 0, cv.getBuffer(), 240, 240);
+  blitCanvas(cv);
   frameNo++;
 }
 

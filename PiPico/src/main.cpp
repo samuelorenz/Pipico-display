@@ -8,7 +8,14 @@
 //
 // Comandi comuni (gli altri vengono passati al tema attivo):
 //   ?                 risponde "ID,<tema>"
+//   FPS               risponde "FPS,<fotogrammi al secondo>"
+//   V                 risponde "VER,<versione>,<data di compilazione>"
+//   L                 risponde "LIST,<tema>,<tema>,..." (i temi presenti nel firmware)
 //   D                 risponde "STATE,<tema>,<elementi>,<schermata>,<spegnimento>,<metrica>,<auto>,<cpu>,<gpu>,<temp>,<cicalino>,<nome>"
+//   DALL              come D, una riga per ogni tema (anche quelli non attivi)
+//   W,<tema>,<elementi>,<schermata>,<nome>   scrive lo stato di un tema senza attivarlo
+//   SNAP              invia l'ultimo fotogramma: riga "SNAP,240,240,2" e poi 115200 byte RGB565
+//   (dopo ogni salvataggio nella flash il Pico scrive "SAVED")
 //   A,<cpu>,<gpu>,<temp>,<cicalino>   soglie di allarme in % / gradi (0 = disattivata) e cicalino 0|1
 //   T,<tema>|next     cambia tema (fallout | skynet | cyberpunk | alien)
 //   B,<secondi>       spegne la retroilluminazione dopo N secondi senza dati (0 = mai)
@@ -22,6 +29,8 @@
 #include "common/shared.h"
 #include "common/theme.h"
 #include "common/stats.h"
+
+#define FW_VERSION  "1.3.0"
 
 #define BTN_THEME   14   // pin fisico 19
 #define BTN_SCREEN  15   // pin fisico 20
@@ -64,6 +73,8 @@ uint16_t offSec = 300;      // spegnimento retroilluminazione (0 = mai)
 
 int active = 0;
 unsigned long lastActivity = 0, lastCheck = 0;
+unsigned fpsNow = 0, fpsCount = 0;  // fotogrammi al secondo (comando FPS)
+unsigned long fpsAt = 0;
 bool backlightOn = true;
 
 static void snapshot(Saved &s) {
@@ -99,6 +110,7 @@ static void flushSave() {
   savePending = false;
   EEPROM.put(0, cur);
   EEPROM.commit();  // scrive la flash: blocca il Pico per qualche decina di ms
+  Serial.println("SAVED");
 }
 
 static void loadSettings() {
@@ -129,6 +141,16 @@ static void wake() {
   if (!backlightOn) { backlightOn = true; digitalWrite(TFT_BL, HIGH); }
 }
 
+// Una riga STATE per il tema dato (stesso formato per D e DALL)
+static void printState(const Theme *th) {
+  ThemeState st;
+  memset(&st, 0, sizeof(st));
+  th->getState(st);
+  Serial.println(String("STATE,") + th->id + "," + st.flags + "," + st.screen + "," + offSec + "," +
+                 graphMetric + "," + (graphAuto ? 1 : 0) + "," + alarmCpu + "," + alarmGpu + "," + alarmTemp + "," +
+                 (alarmBeep ? 1 : 0) + "," + st.name);
+}
+
 // ---------- Comandi ----------
 static void handleLine(const String &s) {
   String t = s;
@@ -137,13 +159,39 @@ static void handleLine(const String &s) {
 
   if (parseStats(t)) return;  // S / X / P: dati del PC
   if (t == "?") { Serial.println(String("ID,") + THEMES[active]->id); return; }
-  if (t == "D") {  // stato corrente, per la GUI: STATE,tema,elementi,schermata,spegnimento,metrica,auto,nome
-    ThemeState st;
-    memset(&st, 0, sizeof(st));
-    THEMES[active]->getState(st);
-    Serial.println(String("STATE,") + THEMES[active]->id + "," + st.flags + "," + st.screen + "," + offSec + "," +
-                   graphMetric + "," + (graphAuto ? 1 : 0) + "," + alarmCpu + "," + alarmGpu + "," + alarmTemp + "," +
-                   (alarmBeep ? 1 : 0) + "," + st.name);
+  if (t == "D") { printState(THEMES[active]); return; }
+  if (t == "DALL") { for (int i = 0; i < NTHEMES; i++) printState(THEMES[i]); return; }
+  if (t == "FPS") { Serial.println(String("FPS,") + fpsNow); return; }
+  if (t == "V") { Serial.println(String("VER,") + FW_VERSION + "," + __DATE__); return; }
+  if (t == "L") {
+    String l = "LIST";
+    for (int i = 0; i < NTHEMES; i++) l += String(",") + THEMES[i]->id;
+    Serial.println(l);
+    return;
+  }
+  if (t == "SNAP") {  // anteprima: l'ultimo fotogramma disegnato (RGB565, little endian)
+    Serial.println("SNAP,240,240,2");
+    Serial.write((const uint8_t *)sharedCanvas().getBuffer(), 240 * 240 * 2);
+    Serial.println();
+    return;
+  }
+  if (t.startsWith("W,")) {  // W,<tema>,<elementi>,<schermata>,<nome>
+    int c1 = t.indexOf(',', 2), c2 = t.indexOf(',', c1 + 1), c3 = t.indexOf(',', c2 + 1);
+    if (c1 < 0 || c2 < 0 || c3 < 0) { Serial.println("ERR formato W"); return; }
+    String id = t.substring(2, c1);
+    for (int i = 0; i < NTHEMES; i++)
+      if (id == THEMES[i]->id) {
+        ThemeState st;
+        memset(&st, 0, sizeof(st));
+        st.flags = strtoul(t.substring(c1 + 1, c2).c_str(), nullptr, 10);
+        st.screen = (uint8_t)t.substring(c2 + 1, c3).toInt();
+        strncpy(st.name, t.substring(c3 + 1).c_str(), 16);
+        THEMES[i]->setState(st);
+        Serial.println("OK " + t);
+        checkDirty();
+        return;
+      }
+    Serial.println("ERR tema sconosciuto: " + id);
     return;
   }
   if (parseGraphCmd(t)) { checkDirty(); return; }
@@ -242,6 +290,11 @@ void loop() {
   if (millis() - lastCheck > 1000) { lastCheck = millis(); checkDirty(); }
   flushSave();
 
-  if (backlightOn) THEMES[active]->tick();
-  else delay(50);
+  if (backlightOn) {
+    THEMES[active]->tick();
+    fpsCount++;
+    if (millis() - fpsAt >= 1000) { fpsNow = fpsCount; fpsCount = 0; fpsAt = millis(); }
+  } else {
+    delay(50);
+  }
 }

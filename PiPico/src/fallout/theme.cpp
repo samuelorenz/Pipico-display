@@ -510,7 +510,7 @@ void renderFrame() {
   if (on(E_SCANLINES)) applyScanlines();
 
   alertOverlay(cv, G, frameNo);
-  tft.drawRGBBitmap(0, 0, cv.getBuffer(), 240, 240);
+  blitCanvas(cv);
   frameNo++;
 }
 

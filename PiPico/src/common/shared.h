@@ -14,3 +14,4 @@
 
 extern Adafruit_ST7789 tft;
 GFXcanvas16 &sharedCanvas();  // canvas 240x240 comune a tutti i temi
+void blitCanvas(GFXcanvas16 &c);  // invia il canvas al display con un solo trasferimento SPI a blocchi (molto piu' veloce di drawRGBBitmap)
