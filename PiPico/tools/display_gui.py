@@ -1,4 +1,4 @@
-"""GUI di debug per il display (build fallout, skynet, cyberpunk e pipboy).
+"""GUI di debug per il display (temi fallout, skynet e cyberpunk).
 
 Permette di accendere/spegnere ogni elemento ed effetto del display in tempo reale,
 scegliere la schermata, inviare le statistiche del PC e salvare/copiare la configurazione
@@ -127,18 +127,6 @@ BUILDS = {
             (14, "typeon",     "Scrittura progressiva del testo",                "Effetti"),
         ],
     },
-    "pipboy": {
-        "title": "Pip-Boy (pipboy)",
-        "name_label": "Nome (non usato):",
-        "flags": False,  # niente elementi configurabili: la GUI non invia C, e N,
-        "screens": [
-            ("pip", "Schermata STAT con Vault Boy"),
-            ("graph", "Grafico statistiche (scheda DATA)"),
-            ("anim", "Sinusoide"),
-            ("term", "Grafico seriale / testo"),
-        ],
-        "elements": [],
-    },
 }
 
 # Grafico della schermata "graph" (comando G,<chiave>)
@@ -181,7 +169,7 @@ class App:
         self.running = True
 
         self.cfg = self.load_config()
-        self.build = tk.StringVar(value=self.cfg.get("build", "fallout"))
+        self.build = tk.StringVar(value=self.cfg.get("build") if self.cfg.get("build") in BUILDS else "fallout")
         self.port = tk.StringVar(value=self.cfg.get("port", ""))
         self.status = tk.StringVar(value="Non collegato")
         self.stats_txt = tk.StringVar(value="-")

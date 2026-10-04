@@ -1,17 +1,16 @@
 # PiPico Display
 
-Firmware per **Raspberry Pi Pico (RP2040)** che pilota un display TFT **ST7789 240x240** via SPI hardware e lo trasforma in un monitor per il PC a tema cinematografico/videoludico. Un **firmware unico** contiene quattro temi e si cambia tema al volo, da seriale, dalla GUI o con un pulsante:
+Firmware per **Raspberry Pi Pico (RP2040)** che pilota un display TFT **ST7789 240x240** via SPI hardware e lo trasforma in un monitor per il PC a tema cinematografico/videoludico. Un **firmware unico** contiene tre temi e si cambia tema al volo, da seriale, dalla GUI o con un pulsante:
 
 | Tema (`T,<tema>`) | Descrizione | Colore |
 |-------------------|-------------|--------|
 | `fallout` | Terminale **RobCo Industries** di *Fallout*: boot di Fallout 4, monitor di sistema, minigioco di hacking, terminale seriale | verde |
 | `skynet`  | Visione del **T-800** / terminale **Skynet** di *Terminator*: intro con logo, HUD con mirino, codice 6502, analisi, possible responses, terminale seriale | rosso |
 | `cyberpunk` | **Netrunner** di *Cyberpunk 2077*: boot delle ottiche, monitor con quickhack e scanner, minigioco Breach Protocol, terminale seriale | giallo / ciano / rosso |
-| `pipboy`  | Mini **Pip-Boy** di *Fallout*: intro Vault-Tec, schermata STAT con Vault Boy | verde |
 
 Tutti i temi hanno una modalità di test da **seriale** (grafico dei numeri ricevuti e testo libero), la schermata **Grafico** delle statistiche e mostrano le **statistiche del PC** in tempo reale (vedi [Statistiche del PC](#statistiche-del-pc-companion)). Il Pico **ricorda** tema, elementi visibili, schermata, nome e grafico anche dopo lo spegnimento. L'upload è automatico, senza premere BOOTSEL (Windows/PowerShell).
 
-> Progetto amatoriale senza scopo commerciale. *Fallout*, *RobCo*, *Pip-Boy*, *Vault Boy*, *Vault-Tec* (Bethesda Softworks), *Terminator*, *Skynet* e *Cyberdyne Systems* sono marchi dei rispettivi proprietari, come *Cyberpunk 2077*, *Night City*, *Kiroshi* e *Netwatch* (CD PROJEKT). Vedi la sezione [Note sui diritti](#note-sui-diritti).
+> Progetto amatoriale senza scopo commerciale. *Fallout*, *RobCo* (Bethesda Softworks), *Terminator*, *Skynet* e *Cyberdyne Systems* sono marchi dei rispettivi proprietari, come *Cyberpunk 2077*, *Night City*, *Kiroshi* e *Netwatch* (CD PROJEKT). Vedi la sezione [Note sui diritti](#note-sui-diritti).
 
 ## Hardware
 
@@ -48,11 +47,10 @@ pio run -t upload               # firmware unico con tutti i temi (env "all", pr
 pio run -e fallout   -t upload  # solo RobCo Industries (firmware piu' piccolo)
 pio run -e skynet    -t upload  # solo Skynet / T-800
 pio run -e cyberpunk -t upload  # solo Cyberpunk 2077
-pio run -e pipboy    -t upload  # solo Pip-Boy
 pio run                         # solo compilazione
 ```
 
-Il firmware `all` pesa circa 240 KB su 2 MB di flash e usa circa 8% della RAM statica più un canvas condiviso da 115 KB. Gli ambienti con un solo tema compilano il tema con `-DONLY_<TEMA>`; il resto del comportamento (comandi, salvataggio, pulsanti) è identico.
+Il firmware `all` pesa circa 180 KB su 2 MB di flash e usa circa 8% della RAM statica più un canvas condiviso da 115 KB. Gli ambienti con un solo tema compilano il tema con `-DONLY_<TEMA>`; il resto del comportamento (comandi, salvataggio, pulsanti) è identico.
 
 In VS Code puoi scegliere l'ambiente dalla barra di PlatformIO in basso e poi premere la freccia di upload. Se `pio` non è nel PATH di Windows usa l'eseguibile dell'ambiente PlatformIO: `%USERPROFILE%\.platformio\penv\Scripts\pio.exe`.
 
@@ -68,7 +66,7 @@ L'upload usa [upload.ps1](upload.ps1):
 
 | Come | Effetto |
 |------|---------|
-| comando `T,fallout` / `T,skynet` / `T,cyberpunk` / `T,pipboy` / `T,next` | cambia tema (il boot del nuovo tema parte subito) |
+| comando `T,fallout` / `T,skynet` / `T,cyberpunk` / `T,next` | cambia tema (il boot del nuovo tema parte subito) |
 | menu *Build* della [GUI](#gui-di-debug) | come sopra |
 | pulsante su **GP14** (pin fisico 19) verso GND | tema successivo |
 | pulsante su **GP15** (pin fisico 20) verso GND | schermata successiva del tema attivo |
@@ -96,7 +94,7 @@ Aprire la porta a 1200 baud fa riavviare il Pico in BOOTSEL: .NET segnala quindi
 
 ## Statistiche del PC (companion)
 
-Tutti i temi mostrano in tempo reale CPU, RAM, disco, rete, uptime e, con una scheda NVIDIA, GPU e temperatura; in più, se disponibili, temperatura della CPU, batteria e il processo che usa più CPU. Un piccolo script sul PC le legge e le manda al Pico via USB; il Pico le integra nella grafica già presente, senza una schermata separata. Il tema `pipboy` mostra le statistiche principali: due barre verticali CPU e GPU ai lati del Vault Boy, `CPU / RAM / GPU` nella barra in basso al posto di `HP / LEVEL / AP`, riga `TEMP / DSK / NET` sotto il personaggio; sotto sforzo l'omino cammina più veloce e sopra soglia lampeggia con `!! OVERLOAD !!`.
+Tutti i temi mostrano in tempo reale CPU, RAM, disco, rete, uptime e, con una scheda NVIDIA, GPU e temperatura; in più, se disponibili, temperatura della CPU, batteria e il processo che usa più CPU. Un piccolo script sul PC le legge e le manda al Pico via USB; il Pico le integra nella grafica già presente, senza una schermata separata.
 
 ### Avvio
 
@@ -164,7 +162,6 @@ Il fondo scala è 100 per le percentuali, almeno 100 °C per la temperatura e au
 | `fallout` | `-RobCo Telemetry: CPU LOAD-`, selettore `CPU RAM DSK GPU TMP NET` con la voce in negativo, curva verde con area piena e quarti tratteggiati, righe `NOW / MIN / MAX / AVG` e `> LOG: trend rising/falling/stable`, prompt `> run:// telemetry -cpu` |
 | `skynet` | `TELEMETRY // CPU LOAD`, curva rossa su griglia a punti con un piccolo mirino bianco sull'ultimo valore, `CURRENT / PEAK / MEAN / SAMPLES`, `ANALYSIS: TREND RISING`, `MODE: LOCKED ON CPU` o `AUTO CYCLE` |
 | `cyberpunk` | `NETRUNNER // TELEMETRY`, chip di selezione gialli con l'angolo tagliato, curva gialla (CPU), ciano (RAM, disco, rete) o rossa (GPU, temperatura) con area piena, valore attuale grande con separazione RGB, `MIN / MAX / AVG / TREND` |
-| `pipboy` | scheda **DATA** del Pip-Boy con le metriche come sottoschede, curva verde con le tacche sugli assi, barra in basso `NOW / MIN MAX / AVG` |
 
 Il codice comune (storico, scala, statistiche, tendenza, disegno della curva, comando `G,`) sta in [src/common/history.h](src/common/history.h), incluso da ogni tema. Il resto della grafica è nello stile di ciascun tema.
 
@@ -242,16 +239,16 @@ python tools/display_gui.py
 
 - **Sincronizzata con il Pico:** quando si collega legge lo stato salvato sul Pico (comandi `?` e `D`) e imposta da sola tema, caselle, schermata, nome, grafico e tempo di spegnimento. Quello che vedi nella GUI è quello che c'è sul display.
 - **Build:** il menu cambia tema sul Pico (`T,<tema>`); le caselle si aggiornano quando il Pico risponde.
-- **Schermata:** quelle del tema (RobCo: automatica, monitor, hacking, terminale, grafico; Skynet: HUD, terminale, grafico; Cyberpunk: automatica, monitor, Breach Protocol, terminale, grafico; Pip-Boy: STAT, grafico, sinusoide, terminale), più i pulsanti *Rivedi il boot* e *Pulisci terminale*.
+- **Schermata:** quelle del tema (RobCo: automatica, monitor, hacking, terminale, grafico; Skynet: HUD, terminale, grafico; Cyberpunk: automatica, monitor, Breach Protocol, terminale, grafico), più i pulsanti *Rivedi il boot* e *Pulisci terminale*.
 - **Grafico:** menu con la statistica da mostrare (o la rotazione automatica). Scegliendola, il display passa alla schermata Grafico.
-- **Elementi:** una casella per ogni contenuto, statistica ed effetto (non per `pipboy`, che non ha elementi configurabili). Ogni modifica arriva subito al display. Ci sono anche i pulsanti *Tutto acceso* e *Tutto spento*.
+- **Elementi:** una casella per ogni contenuto, statistica ed effetto. Ogni modifica arriva subito al display. Ci sono anche i pulsanti *Tutto acceso* e *Tutto spento*.
 - **Dati:** nome (amministratore per RobCo, bersaglio per Skynet, netrunner per Cyberpunk), **tempo di spegnimento dello schermo**, invio delle statistiche del PC (sostituisce `pc_stats.py`; mostra anche temperatura CPU, batteria e processo più pesante) e una riga libera da inviare al Pico.
 - **Note per Claude:** spazio per scrivere cosa ti piace e cosa cambiare.
 - **Salva configurazione:** scrive `tools/display_config.json` (una sezione per tema) e `tools/display_config.txt`.
 - **Copia per Claude:** copia negli appunti un riepilogo (tema, schermata, grafico, maschera, elementi da TENERE e da TOGLIERE, note) da incollare in chat, così i valori scelti possono diventare quelli predefiniti del firmware.
 - **Risposte del Pico:** mostra le conferme `OK ...` ricevute.
 
-Le scelte fatte nella GUI vengono salvate **dal Pico** nella flash: non serve rimandarle. La GUI usa la porta seriale come `pc_stats.py`: all'apertura ferma lo script e lo rilancia alla chiusura; `upload.ps1` ferma e rilancia entrambi. Durante l'intro Skynet o Pip-Boy (circa 8 secondi) il Pico non legge la seriale: i comandi arrivano subito dopo. Richiede Python con Tkinter (incluso nell'installer di Python per Windows; il Python interno di PlatformIO non lo ha).
+Le scelte fatte nella GUI vengono salvate **dal Pico** nella flash: non serve rimandarle. La GUI usa la porta seriale come `pc_stats.py`: all'apertura ferma lo script e lo rilancia alla chiusura; `upload.ps1` ferma e rilancia entrambi. Durante l'intro Skynet (circa 8 secondi) il Pico non legge la seriale: i comandi arrivano subito dopo. Richiede Python con Tkinter (incluso nell'installer di Python per Windows; il Python interno di PlatformIO non lo ha).
 
 ## Build `skynet`: visione del T-800 / terminale Skynet
 
@@ -351,63 +348,12 @@ In fondo a tutte le schermate scorre il notiziario `N54 NEWS` con sotto la riga 
 
 Esempio: `C,65535` accende tutto (predefinito).
 
-## Build `pipboy`: Pip-Boy
-
-### Intro (a ogni accensione)
-
-1. Una riga luminosa che si apre, come un vecchio schermo CRT che si accende.
-2. Il logo **Vault-Tec** (testo, anello con barre e slogan) in dissolvenza.
-3. Le righe di boot: `PIP-BOY 3000 MK IV`, `INIT SPI BUS ... OK`, `LOADING VAULT BOY ... OK`, `WELCOME, DWELLER`.
-
-### Schermata STAT (comando `pip`, predefinita)
-
-- Tab `STAT / INV / DATA / MAP / RADIO` con la tacca sotto STAT e sottoschede `STATUS / SPECIAL / PERKS`.
-- Tacche di mira attorno al personaggio.
-- **Vault Boy** verde con effetto "camminata": dondolio laterale e rimbalzo a ogni passo, più leggero sfarfallio della luminosità.
-- Barra inferiore `HP 90/90`, `LEVEL 1` con barra XP e `AP 70/70`.
-
-> L'omino parte da **un solo fotogramma** (la schermata di riferimento) e il movimento è simulato con rotazione e rimbalzo. Per una vera camminata servono più fotogrammi: vedi [Sprite](#sprite-e-grafica-pipboy).
-
-### Comandi da seriale
-
-| Input | Effetto |
-|-------|---------|
-| `pip` | schermata Pip-Boy con Vault Boy |
-| `graph` / `M,graph` | scheda DATA con il grafico; `G,<metrica>` sceglie la statistica |
-| `M,pip` / `M,anim` / `M,boot` / `?` | come sopra, usati dalla GUI (`?` risponde `ID,pipboy`) |
-| `intro` | rivede l'intro con logo Vault-Tec |
-| `anim` | sinusoide verde animata |
-| un numero (`23.5`, `-4`) | passa al grafico e aggiunge il valore (testo giallo in alto) |
-| testo libero (`ciao`) | passa al grafico e mostra il testo in alto, in bianco (non viene plottato) |
-| `clear` | azzera il grafico |
-
-Apri il Serial Monitor a **115200 baud** (`pio device monitor`) e scrivi una riga seguita da Invio. Se scrivi direttamente nel terminale di PowerShell invece che nel Serial Monitor, il comando non arriva al Pico.
-
 ## Prestazioni
 
 - Per impostazione predefinita la libreria Adafruit usa SPI a **8 MHz** e un `fillScreen` completo costa circa 115 ms, per cui il display sembra lento. I firmware impostano `tft.setSPISpeed(40000000)` (40 MHz). Se vedi pixel sporchi o schermo instabile abbassa a 32 MHz; con cavi corti puoi provare fino a 62.5 MHz.
 - Le animazioni sono disegnate **fuori schermo** su un `GFXcanvas16` 240x240 (circa 115 KB di RAM) e inviate al display in un unico blocco con `drawRGBBitmap`: niente sfarfallio e circa 30-40 fps.
-- Uso di memoria: firmware `all` circa 240 KB di flash su 2 MB (11%) e circa 20 KB di RAM statica, più il canvas condiviso da 115 KB allocato all'avvio. Un solo tema: circa 100 KB (`cyberpunk`), 101 KB (`fallout`), 120 KB (`skynet`) o 129 KB (`pipboy`, con gli sprite).
+- Uso di memoria: firmware `all` circa 180 KB di flash su 2 MB (8,5%) e circa 20 KB di RAM statica, più il canvas condiviso da 115 KB allocato all'avvio. Un solo tema: circa 96 KB (`cyberpunk`), 101 KB (`fallout`) o 120 KB (`skynet`).
 - Le impostazioni salvate occupano un settore della flash (emulazione EEPROM, 256 byte usati). La scrittura blocca il Pico per qualche decina di millisecondi, per questo avviene solo 3 secondi dopo un cambiamento e non a ogni fotogramma.
-
-## Sprite e grafica (pipboy)
-
-Il Vault Boy e il logo Vault-Tec sono **maschere alpha a 8 bit** (0 = trasparente, 255 = pieno) memorizzate in [src/pipboy/sprites.h](src/pipboy/sprites.h) e disegnate in verde Pip-Boy (RGB 40, 255, 100) da `blitAlpha()` in [src/pipboy/theme.cpp](src/pipboy/theme.cpp), con luminosità e rotazione regolabili.
-
-| Sprite | Dimensione | Origine |
-|--------|------------|---------|
-| `VB_SPRITE` | 78 x 148 px | ritaglio del Vault Boy dalla schermata STAT del Pip-Boy |
-| `VAULTTEC_LOGO` | 240 x 174 px | logo Vault-Tec (giallo su blu), binarizzato in base al canale rosso |
-
-### Rigenerare gli sprite
-
-[tools/make_sprites.py](tools/make_sprites.py) ritaglia, filtra e converte le immagini sorgente in `src/pipboy/sprites.h`:
-
-```bash
-python tools/make_sprites.py <schermata_pipboy.png> <logo_vaulttec.png>
-```
-
-Le immagini sorgente **non sono incluse** nel repository. I riquadri di ritaglio (`VB_BOX`, `LOGO_BOX`) e la scala (`VB_SCALE`) sono costanti in cima allo script, da regolare se usi immagini di dimensioni diverse. Per avere una camminata vera: genera più sprite (un fotogramma per posa) e alterna in `drawPipFrame()` in base a `walkT`.
 
 ## Loghi
 
@@ -418,9 +364,8 @@ Ogni build mostra nel boot il logo del proprio mondo, salvato come **maschera al
 | `fallout` | RobCo Industries (versione di *Fallout 76*) | [src/fallout/logo.h](src/fallout/logo.h) | 220 x 104 | verde fosforo |
 | `skynet` | Skynet / Cyberdyne Systems | [src/skynet/logo.h](src/skynet/logo.h) | 236 x 165 | rosso, con glitch |
 | `cyberpunk` | Arasaka: scritta e stemma separati | [src/cyberpunk/logo.h](src/cyberpunk/logo.h) | 232 x 25 e 96 x 95 | rosso Arasaka + copia ciano |
-| `pipboy` | Vault-Tec (e Vault Boy) | [src/pipboy/sprites.h](src/pipboy/sprites.h) | 240 x 174 | verde Pip-Boy |
 
-I loghi RobCo e Arasaka vengono dai wiki di Fallout e Cyberpunk 2077 (file `FO76 Robco Logo.png` e `Arasaka Logo CP2077.png`). Skynet e Vault-Tec vengono da immagini fornite a mano.
+I loghi RobCo e Arasaka vengono dai wiki di Fallout e Cyberpunk 2077 (file `FO76 Robco Logo.png` e `Arasaka Logo CP2077.png`). Il logo Skynet viene da un'immagine fornita a mano.
 
 ### Rigenerare un logo
 
@@ -431,7 +376,6 @@ python tools/make_logo.py robco.png   src/fallout/logo.h   ROBCO_LOGO     220 11
 python tools/make_logo.py arasaka.png src/cyberpunk/logo.h ARASAKA_LOGO   232 40
 python tools/make_logo.py arasaka.png src/cyberpunk/logo.h ARASAKA_EMBLEM 96 96 --crop 0,425,230,655 --append
 python tools/make_skynet_logo.py <logo_skynet.png>
-python tools/make_sprites.py <schermata_pipboy.png> <logo_vaulttec.png>
 ```
 
 `--crop` ritaglia prima una parte dell'immagine (qui lo stemma Arasaka) e `--append` aggiunge la maschera allo stesso file `.h`. Le immagini sorgente non sono incluse nel repository. Per cambiare logo basta rigenerare il `.h` con lo stesso nome e ricompilare. Nella GUI la casella *Logo* lo mostra o lo nasconde (`fallout` e `cyberpunk`).
@@ -452,21 +396,18 @@ src/skynet/theme.cpp       tema Skynet: intro, HUD, terminale, grafico
 src/skynet/logo.h          logo Skynet (generato)
 src/cyberpunk/theme.cpp    tema Cyberpunk: boot, monitor, Breach Protocol, terminale, grafico
 src/cyberpunk/logo.h       logo e stemma Arasaka (generati)
-src/pipboy/theme.cpp       tema Pip-Boy: intro, STAT, sinusoide, grafico
-src/pipboy/sprites.h       sprite Pip-Boy (generati)
 tools/pc_stats.py          invia le statistiche del PC al Pico
 tools/autostart.ps1        installa/rimuove l'avvio automatico di pc_stats.py con Windows
 tools/display_gui.py       GUI di debug (elementi, schermate, statistiche)
 tools/display_config.*     configurazione salvata dalla GUI (generata)
 tools/make_logo.py         generatore generico di loghi (RobCo, Arasaka)
 tools/make_skynet_logo.py  generatore del logo Skynet
-tools/make_sprites.py      generatore degli sprite del Pip-Boy
 tools/requirements.txt     dipendenze Python degli script in tools/
 ```
 
 Ogni tema è un file `theme.cpp` con tutto il suo codice in un `namespace` anonimo (così i temi non si disturbano tra loro) e una costante `Theme` in fondo (`THEME_FALLOUT`, ...) che `src/main.cpp` usa per avviarlo, passargli i comandi, salvarne lo stato e disegnarlo. Tutti i temi disegnano sullo stesso canvas condiviso, quindi aggiungerne uno non costa RAM.
 
-**Aggiungere un nuovo tema:** crea `src/<nome>/theme.cpp` copiando la struttura di uno esistente (funzioni `thBegin`, `thTick`, `thGetState`, `thSetState`, `thNext`, `thReboot` e la costante `Theme`), dichiara `extern const Theme THEME_<NOME>` in [src/common/theme.h](src/common/theme.h), aggiungilo all'elenco `THEMES` in `src/main.cpp`, nello `slotOf()` (massimo 4 temi nello stato salvato: aumenta `Saved::st`) e un `[env:<nome>]` in `platformio.ini`.
+**Aggiungere un nuovo tema:** crea `src/<nome>/theme.cpp` copiando la struttura di uno esistente (funzioni `thBegin`, `thTick`, `thGetState`, `thSetState`, `thNext`, `thReboot` e la costante `Theme`), dichiara `extern const Theme THEME_<NOME>` in [src/common/theme.h](src/common/theme.h), aggiungilo all'elenco `THEMES` in `src/main.cpp`, nello `slotOf()` (massimo 3 temi nello stato salvato: aumenta `Saved::st`) e un `[env:<nome>]` in `platformio.ini`.
 
 ### Organizzazione di `src/main.cpp`
 
@@ -527,20 +468,6 @@ Ogni tema è un file `theme.cpp` con tutto il suo codice in un `namespace` anoni
 | `applyGlitch()` / `applyScanlines()` | fasce orizzontali spostate e scanline sul fotogramma |
 | `handleLine()` | interpreta i comandi del tema (`C,`, `M,`, `N,`, testo); i comandi comuni sono in `src/main.cpp` |
 
-### Organizzazione di `src/pipboy/theme.cpp`
-
-| Funzione | Ruolo |
-|----------|-------|
-| `playIntro()` | CRT, logo Vault-Tec, righe di boot |
-| `drawPipFrame()` | un fotogramma della schermata STAT |
-| `drawPipGraph()` | scheda DATA con il grafico delle statistiche |
-| `blitAlpha()` | disegna una maschera alpha in verde con luminosità e rotazione |
-| `drawAnimFrame()` | un fotogramma della sinusoide |
-| `drawPlot()` / `drawText()` | grafico e testo della modalità seriale |
-| `handleLine()` | interpreta i comandi ricevuti da seriale |
-| `parseStats()` / `pcLive()` / `pcAlarm()` | come sopra |
-| `gauge()` | indicatore verticale a segmenti per CPU e GPU |
-
 ## Risoluzione problemi
 
 | Problema | Soluzione |
@@ -561,6 +488,6 @@ Ogni tema è un file `theme.cpp` con tutto il suo codice in un `namespace` anoni
 
 ## Note sui diritti
 
-Le interfacce sono disegnate dal codice. I loghi (RobCo Industries, Vault-Tec, Skynet, Arasaka) e gli sprite del Vault Boy derivano invece da immagini dei videogiochi e del film: *Fallout* © Bethesda Softworks, *Cyberpunk 2077* © CD PROJEKT, *Terminator* © dei rispettivi titolari. I testi sono solo riferimenti alle opere. Tutto è usato per un progetto personale e amatoriale, senza scopo commerciale.
+Le interfacce sono disegnate dal codice. I loghi (RobCo Industries, Skynet, Arasaka) derivano invece da immagini dei videogiochi e del film: *Fallout* © Bethesda Softworks, *Cyberpunk 2077* © CD PROJEKT, *Terminator* © dei rispettivi titolari. I testi sono solo riferimenti alle opere. Tutto è usato per un progetto personale e amatoriale, senza scopo commerciale.
 
-I file generati con le immagini (`src/fallout/logo.h`, `src/skynet/logo.h`, `src/cyberpunk/logo.h`, `src/pipboy/sprites.h`) sono **esclusi dal repository** tramite `.gitignore`, perché derivano da opere protette. Restano sul tuo PC; chi clona il repository deve generarli con gli script in `tools/` e le proprie immagini prima di compilare (vedi [Loghi](#loghi) e [Sprite](#sprite-e-grafica-pipboy)). Per includerli comunque, togli quelle righe da `.gitignore`. Il codice del firmware è tuo e puoi licenziarlo come preferisci.
+I file generati con le immagini (`src/fallout/logo.h`, `src/skynet/logo.h`, `src/cyberpunk/logo.h`) sono **esclusi dal repository** tramite `.gitignore`, perché derivano da opere protette. Restano sul tuo PC; chi clona il repository deve generarli con gli script in `tools/` e le proprie immagini prima di compilare (vedi [Loghi](#loghi)). Per includerli comunque, togli quelle righe da `.gitignore`. Il codice del firmware è tuo e puoi licenziarlo come preferisci.

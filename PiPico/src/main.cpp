@@ -1,5 +1,5 @@
 // Firmware unico: inizializza lo schermo e sceglie quale tema mostrare (fallout, skynet,
-// cyberpunk, pipboy). Si occupa di tutto cio' che non dipende dal tema:
+// cyberpunk). Si occupa di tutto cio' che non dipende dal tema:
 //   - lettura della seriale, statistiche del PC e comandi comuni
 //   - scelta del tema (comando T, oppure pulsante)
 //   - schermata successiva (pulsante)
@@ -9,7 +9,7 @@
 // Comandi comuni (gli altri vengono passati al tema attivo):
 //   ?                 risponde "ID,<tema>"
 //   D                 risponde "STATE,<tema>,<elementi>,<schermata>,<spegnimento>,<metrica>,<auto>,<nome>"
-//   T,<tema>|next     cambia tema (fallout | skynet | cyberpunk | pipboy)
+//   T,<tema>|next     cambia tema (fallout | skynet | cyberpunk)
 //   B,<secondi>       spegne la retroilluminazione dopo N secondi senza dati (0 = mai)
 //   K,reset           cancella le impostazioni salvate e riavvia
 //   G,<metrica>       grafico: cpu | ram | dsk | gpu | tmp | net | auto
@@ -31,17 +31,15 @@ const Theme *const THEMES[] = {&THEME_FALLOUT};
 const Theme *const THEMES[] = {&THEME_SKYNET};
 #elif defined(ONLY_CYBERPUNK)
 const Theme *const THEMES[] = {&THEME_CYBERPUNK};
-#elif defined(ONLY_PIPBOY)
-const Theme *const THEMES[] = {&THEME_PIPBOY};
 #else
-const Theme *const THEMES[] = {&THEME_FALLOUT, &THEME_SKYNET, &THEME_CYBERPUNK, &THEME_PIPBOY};
+const Theme *const THEMES[] = {&THEME_FALLOUT, &THEME_SKYNET, &THEME_CYBERPUNK};
 #endif
 const int NTHEMES = sizeof(THEMES) / sizeof(THEMES[0]);
 
 // Posizione fissa di ogni tema nella flash, indipendente da quali temi sono compilati
 static int slotOf(const Theme *t) {
-  const char *ids[4] = {"fallout", "skynet", "cyberpunk", "pipboy"};
-  for (int i = 0; i < 4; i++) if (!strcmp(t->id, ids[i])) return i;
+  const char *ids[3] = {"fallout", "skynet", "cyberpunk"};
+  for (int i = 0; i < 3; i++) if (!strcmp(t->id, ids[i])) return i;
   return 0;
 }
 
@@ -50,9 +48,9 @@ struct Saved {
   uint32_t magic;
   uint8_t theme, gMetric, gAuto, pad;
   uint16_t offSec, pad2;
-  ThemeState st[4];
+  ThemeState st[3];
 };
-const uint32_t MAGIC = 0x50494331;  // "PIC1"
+const uint32_t MAGIC = 0x50494332;  // "PIC2" (cambiato quando e' stato tolto il tema pipboy: le vecchie impostazioni si ignorano)
 Saved cur;                  // ultimo stato noto (quello salvato o da salvare)
 bool savePending = false;
 unsigned long saveAt = 0;

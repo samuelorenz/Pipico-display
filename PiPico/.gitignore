@@ -15,8 +15,7 @@ tools/*_preview*.png
 src/*/*_preview.png
 
 # Immagini derivate da opere protette (Fallout, Cyberpunk 2077, Terminator):
-# si rigenerano con gli script in tools/ (vedi README, sezioni Loghi e Sprite)
+# si rigenerano con gli script in tools/ (vedi README, sezione Loghi)
 src/fallout/logo.h
 src/skynet/logo.h
 src/cyberpunk/logo.h
-src/pipboy/sprites.h
