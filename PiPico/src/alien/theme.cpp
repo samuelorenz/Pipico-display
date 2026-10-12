@@ -87,11 +87,13 @@ void cursorBlock(int x, int y) {
 
 // Maschera alpha a 8 bit in ambra con luminosita' k
 void blitMask(int x0, int y0, int w, int h, const uint8_t *a, float k) {
+  uint16_t lut[256];  // un colore per ogni livello di trasparenza: niente virgola mobile per pixel
+  for (int v = 0; v < 256; v++) lut[v] = shade(v / 255.0f * k);
   for (int y = 0; y < h; y++)
     for (int x = 0; x < w; x++) {
       uint8_t v = a[y * w + x];
       if (v < 8) continue;
-      cv.drawPixel(x0 + x, y0 + y, shade(v / 255.0f * k));
+      cv.drawPixel(x0 + x, y0 + y, lut[v]);
     }
 }
 
@@ -132,15 +134,15 @@ void applyScanlines() {  // righe dispari al 75% di luminosita'
 
 // ---------- Boot ----------
 void drawBoot() {
-  if (bootHold > 40 && on(E_LOGO)) {  // dopo le righe: logo Weyland-Yutani in dissolvenza
-    float k = min(1.0f, (bootHold - 40) / 25.0f);
+  if (bootHold > 25 && on(E_LOGO)) {  // dopo le righe: logo Weyland-Yutani in dissolvenza
+    float k = min(1.0f, (bootHold - 25) / 20.0f);
     blitMask((240 - WY_LOGO_W) / 2, 54, WY_LOGO_W, WY_LOGO_H, WY_LOGO, k);
-    if (bootHold > 75) {
-      budget = (bootHold - 75) * 2;  // sottotitolo battuto
+    if (bootHold > 50) {
+      budget = (bootHold - 50) * 3;  // sottotitolo battuto
       tcenter(160, "MU/TH/UR 6000");
       tcenter(174, "INTERFACE 2037 READY FOR INQUIRY");
     }
-    if (++bootHold > 180) { booting = false; resetType(); }
+    if (++bootHold > 120) { booting = false; resetType(); }
     return;
   }
   const char *lines[] = {
@@ -161,7 +163,7 @@ void drawBoot() {
   for (const char *l : lines) { tprint(6, y, l); y += 12; }
   if (budget > 0) {  // tutto scritto: breve pausa e poi il logo
     cursorBlock(6 + 24 * 6, y - 12);
-    if (++bootHold > 40 && !on(E_LOGO)) { booting = false; resetType(); }
+    if (++bootHold > 25 && !on(E_LOGO)) { booting = false; resetType(); }
   }
 }
 
@@ -273,8 +275,6 @@ void drawTracker() {
     float a = d * DEG_TO_RAD;
     cv.drawLine(CX + cosf(a) * (R - 5), CY + sinf(a) * (R - 5), CX + cosf(a) * R, CY + sinf(a) * R, AM);
   }
-  tprint(CX + 3, CY - R / 3 - 8, "10M", 1, AD);
-  tprint(CX + 3, CY - R * 2 / 3 - 8, "20M", 1, AD);
 
   // raggio che ruota, con coda che sfuma
   float sweep = frameNo * 0.075f;
@@ -299,6 +299,9 @@ void drawTracker() {
     }
     closest = min(closest, (int)dist);
   }
+
+  tprint(CX + 3, CY - R / 3 - 8, "10M", 1, AM);   // etichette sopra il raggio (altrimenti restano coperte)
+  tprint(CX + 3, CY - R * 2 / 3 - 8, "20M", 1, AM);
 
   if (on(E_LOG)) {
     if (n) {
@@ -424,7 +427,7 @@ void renderFrame() {
   if (want != shown) { shown = want; resetType(); }
 
   budget = on(E_TYPEON) ? revealed : (1 << 30);
-  if (revealed < 1000000) revealed += booting ? 5 : 14;
+  if (revealed < 1000000) revealed += booting ? 9 : 14;
   txtCol = (on(E_FLICKER) && random(0, 70) == 0) ? AM : A;
 
   drawBackground();
@@ -520,7 +523,9 @@ void thSetState(const ThemeState &s) {
   screenSel = (Screen)min<int>(s.screen, SCR_GRAPH);
   if (s.name[0]) crewName = s.name;
 }
-void thNext() { screenSel = (Screen)((screenSel + 1) % 5); }  // AUTO, SYSTEM, TRACKER, TERM, GRAPH
+void thNext() {
+  if (booting) { booting = false; resetType(); return; }  // il pulsante salta il boot
+  screenSel = (Screen)((screenSel + 1) % 5); }  // AUTO, SYSTEM, TRACKER, TERM, GRAPH
 void thReboot() { startBoot(); }
 }  // namespace
 

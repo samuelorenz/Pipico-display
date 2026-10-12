@@ -123,26 +123,27 @@ static void applyScanlines() {
 
 // Disegna una maschera alpha a 8 bit nel colore (r,g,b) con luminosita' k
 static void blitMask(int x0, int y0, int w, int h, const uint8_t *a, uint8_t r, uint8_t g, uint8_t b, float k) {
+  uint16_t lut[256];  // un colore per ogni livello di trasparenza: niente virgola mobile per pixel
+  for (int v = 0; v < 256; v++) { float f = v / 255.0f * k; lut[v] = tft.color565(r * f, g * f, b * f); }
   for (int y = 0; y < h; y++)
     for (int x = 0; x < w; x++) {
       uint8_t v = a[y * w + x];
       if (v < 8) continue;
-      float f = v / 255.0f * k;
-      cv.drawPixel(x0 + x, y0 + y, tft.color565(r * f, g * f, b * f));
+      cv.drawPixel(x0 + x, y0 + y, lut[v]);
     }
 }
 
 // ---------- Boot (sequenza di Fallout 4) ----------
 static void drawBoot() {
-  if (bootHold > 50 && on(E_LOGO)) {  // dopo le righe: logo RobCo in dissolvenza
-    float k = min(1.0f, (bootHold - 50) / 25.0f);
+  if (bootHold > 30 && on(E_LOGO)) {  // dopo le righe: logo RobCo in dissolvenza
+    float k = min(1.0f, (bootHold - 30) / 20.0f);
     blitMask((240 - ROBCO_LOGO_W) / 2, 50, ROBCO_LOGO_W, ROBCO_LOGO_H, ROBCO_LOGO, 120, 255, 160, k);
-    if (bootHold > 80) {
-      budget = (bootHold - 80) * 2;  // sottotitolo battuto a mano
+    if (bootHold > 55) {
+      budget = (bootHold - 55) * 3;  // sottotitolo battuto a mano
       tcenter(170, "TERMLINK PROTOCOL v2.3.0");
       tcenter(184, "(C) 2075-2077 ROBCO INDUSTRIES");
     }
-    if (++bootHold > 190) { booting = false; resetType(); }
+    if (++bootHold > 120) { booting = false; resetType(); }
     return;
   }
   const char *lines[] = {
@@ -170,7 +171,7 @@ static void drawBoot() {
   for (const char *l : lines) { tprint(4, y, l); y += 10; }
   if (budget > 0) {  // tutto scritto: breve pausa e poi la schermata vera
     cursorBlock(4 + 22 * 6, y - 10);
-    if (++bootHold > 50 && !on(E_LOGO)) { booting = false; resetType(); }
+    if (++bootHold > 30 && !on(E_LOGO)) { booting = false; resetType(); }
   }
 }
 
@@ -248,7 +249,7 @@ static void drawHome() {
     tprint(6, y, "|======="); y += 14;
   }
 
-  if (on(E_MENU)) {
+  if (on(E_MENU) && !(live && on(E_BIGSTATS))) {  // con i dati e le statistiche grandi non c'e' spazio
     const char *itemsLive[3] = {"> View System Log", "> Network Diagnostics", "> Logout"};
     const char *itemsOff[3]  = {"> Request Access", "> Helpdesk", "> Logout"};
     const char **items = live ? itemsLive : itemsOff;
@@ -498,7 +499,7 @@ void renderFrame() {
   if (want != shown) { shown = want; resetType(); }
 
   budget = on(E_TYPEON) ? revealed : (1 << 30);
-  if (revealed < 1000000) revealed += booting ? 5 : 14;
+  if (revealed < 1000000) revealed += booting ? 9 : 14;
   txtCol = (on(E_FLICKER) && random(0, 70) == 0) ? GM : G;
 
   drawBackground();
@@ -593,7 +594,9 @@ static void thSetState(const ThemeState &s) {
   screenSel = (Screen)min<int>(s.screen, SCR_GRAPH);
   if (s.name[0]) adminName = s.name;
 }
-static void thNext() { screenSel = (Screen)((screenSel + 1) % 5); }  // AUTO, HOME, HACK, TERM, GRAPH
+static void thNext() {
+  if (booting) { booting = false; resetType(); return; }  // il pulsante salta il boot
+  screenSel = (Screen)((screenSel + 1) % 5); }  // AUTO, HOME, HACK, TERM, GRAPH
 static void thReboot() { startBoot(); }
 }  // namespace
 

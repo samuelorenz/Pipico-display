@@ -1,21 +1,21 @@
-"""GUI di debug per il display (temi fallout, skynet, cyberpunk e alien).
+"""PiPico Display Config: programma per configurare il display (come i configuratori delle tastiere).
 
-Permette di accendere/spegnere ogni elemento ed effetto del display in tempo reale,
-scegliere la schermata, inviare le statistiche del PC e salvare/copiare la configurazione
-scelta (pulsante "Copia per Claude"). Quando si collega chiede al Pico quale build sta
-girando (comando "?") e mostra le caselle di quella build.
+Le impostazioni si scelgono qui e vengono salvate NEL DISPOSITIVO (flash del Pico): una volta
+impostate il display si avvia sempre cosi', anche senza questo programma e senza il PC.
+
+- Anteprima dal vivo di quello che sta mostrando il display (comando SNAP)
+- Scelta del tema, della schermata, degli elementi e degli effetti, in tempo reale
+- Grafici, allarmi, spegnimento dello schermo, velocita' SPI
+- Profili: esporta / importa tutta la configurazione, preset pronti
+- Invio delle statistiche del PC (in alternativa a pc_stats.py)
 
 Uso:
-    python tools/display_gui.py
+    python tools/display_gui.py                  oppure il collegamento creato da tools/install_app.ps1
+    python tools/display_gui.py --shots cartella   salva uno screenshot di ogni scheda ed esce (collaudo)
 
-Il Pico salva nella flash tema, elementi, schermata, nome e grafico: quando la GUI si collega li
-legge (comando D) e imposta le caselle di conseguenza. Il menu Build cambia tema sul Pico (T,<tema>).
-Mentre e' aperta ferma pc_stats.py (la porta seriale la puo' avere un solo programma) e lo
-rilancia quando viene chiusa.
-
-Richiede: pip install psutil pyserial  (tkinter e' incluso in Python per Windows)
-Sostituisce pc_stats.py mentre e' aperta: la porta seriale puo' averla un solo programma.
+Richiede: pip install psutil pyserial   (tkinter e' incluso in Python per Windows; pillow e' facoltativo)
 """
+import datetime
 import json
 import os
 import queue
@@ -24,151 +24,25 @@ import sys
 import threading
 import time
 import tkinter as tk
-from tkinter import ttk
+from tkinter import filedialog, messagebox, ttk
 
 import psutil
 import serial
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from pc_stats import Collector, find_port  # noqa: E402
-
 HERE = os.path.dirname(os.path.abspath(__file__))
-CONFIG_JSON = os.path.join(HERE, "display_config.json")
-CONFIG_TXT = os.path.join(HERE, "display_config.txt")
+ROOT = os.path.dirname(HERE)
+sys.path.insert(0, HERE)
+from gui_defs import BUILDS, GRAPHS, METRICS, THEME_INFO  # noqa: E402
+from pc_stats import Collector, find_port  # noqa: E402
+from snap import rgb565_to_ppm  # noqa: E402
 
-# Per ogni build: elementi (bit, chiave, etichetta, gruppo) - i bit corrispondono a E_* nel
-# main.cpp della build - e schermate (comando M,<chiave>)
-BUILDS = {
-    "fallout": {
-        "title": "RobCo Industries (fallout)",
-        "name_label": "Nome amministratore:",
-        "screens": [
-            ("auto", "Automatica (monitor se arrivano dati, altrimenti hacking)"),
-            ("home", "Monitor di sistema"),
-            ("hack", "Minigioco hacking password"),
-            ("term", "Terminale seriale"),
-            ("graph", "Grafico statistiche"),
-        ],
-        "elements": [
-            (16, "logo",      "Logo RobCo Industries nel boot",                  "Contenuti"),
-            (0,  "header",    "Intestazione RobCo",                              "Contenuti"),
-            (1,  "title",     "Titolo sezione e linea ====",                     "Contenuti"),
-            (7,  "menu",      "Menu con voce evidenziata",                       "Contenuti"),
-            (8,  "log",       "Righe di LOG / stato",                            "Contenuti"),
-            (9,  "cursor",    "Prompt con cursore lampeggiante",                 "Contenuti"),
-            (2,  "cpu",       "Riga CPU",                                        "Statistiche"),
-            (3,  "ram",       "Riga RAM",                                        "Statistiche"),
-            (4,  "dsk",       "Riga disco",                                      "Statistiche"),
-            (5,  "gpu",       "Riga GPU",                                        "Statistiche"),
-            (6,  "info",      "Info: temp GPU, rete, uptime (offline: User Log)", "Statistiche"),
-            (10, "bigstats",  "Statistiche a caratteri grandi (no = barre ASCII)", "Statistiche"),
-            (11, "scanlines", "Scanline (righe scure alternate)",                "Effetti CRT"),
-            (12, "scanbar",   "Barra di scansione che scende",                   "Effetti CRT"),
-            (13, "glow",      "Bagliore centrale / bordi scuri",                 "Effetti CRT"),
-            (14, "flicker",   "Sfarfallio del fosforo",                          "Effetti CRT"),
-            (15, "typeon",    "Scrittura progressiva del testo",                 "Effetti CRT"),
-        ],
-    },
-    "skynet": {
-        "title": "Skynet / T-800 (skynet)",
-        "name_label": "Nome bersaglio:",
-        "screens": [
-            ("hud", "HUD (visione del T-800)"),
-            ("term", "Terminale seriale"),
-            ("graph", "Grafico statistiche"),
-        ],
-        "elements": [
-            (0,  "header",    "Intestazione CYBERDYNE / MODEL 101",              "Contenuti"),
-            (1,  "datacol",   "Colonna sinistra (codice 6502 / statistiche)",    "Contenuti"),
-            (7,  "reticle",   "Mirino",                                          "Contenuti"),
-            (9,  "analysis",  "Testo di analisi in alto a destra",               "Contenuti"),
-            (10, "responses", "Riquadro POSSIBLE RESPONSES",                     "Contenuti"),
-            (8,  "status",    "Pannello di stato in basso",                      "Contenuti"),
-            (2,  "cpu",       "Riga CPU",                                        "Statistiche"),
-            (3,  "ram",       "Riga RAM",                                        "Statistiche"),
-            (4,  "dsk",       "Riga disco",                                      "Statistiche"),
-            (5,  "gpu",       "Riga GPU",                                        "Statistiche"),
-            (6,  "info",      "Info: TMP / NET / UP",                            "Statistiche"),
-            (17, "bigstats",  "Statistiche a caratteri grandi",                  "Statistiche"),
-            (11, "grid",      "Griglia a punti",                                 "Effetti"),
-            (12, "scanbar",   "Barra di scansione",                              "Effetti"),
-            (13, "noise",     "Disturbo e righe di glitch",                      "Effetti"),
-            (14, "vignette",  "Visione rossa: centro chiaro, bordi scuri",       "Effetti"),
-            (15, "scanlines", "Scanline",                                        "Effetti"),
-            (16, "typeon",    "Scrittura progressiva del testo",                 "Effetti"),
-        ],
-    },
-    "cyberpunk": {
-        "title": "Cyberpunk 2077 (cyberpunk)",
-        "name_label": "Nome netrunner:",
-        "screens": [
-            ("auto", "Automatica (monitor se arrivano dati, altrimenti Breach Protocol)"),
-            ("hud", "Monitor di sistema (netrunner)"),
-            ("breach", "Minigioco Breach Protocol"),
-            ("term", "Terminale seriale"),
-            ("graph", "Grafico statistiche"),
-        ],
-        "elements": [
-            (15, "logo",       "Logo Arasaka nel boot",                          "Contenuti"),
-            (0,  "header",     "Barra gialla in alto",                           "Contenuti"),
-            (6,  "quickhacks", "Elenco QUICKHACKS",                              "Contenuti"),
-            (7,  "scanner",    "Riquadro di scansione",                          "Contenuti"),
-            (8,  "ticker",     "Notiziario N54 e riga di stato",                 "Contenuti"),
-            (9,  "frames",     "Cornici ad angolo tagliato",                     "Contenuti"),
-            (1,  "cpu",        "Barra CPU",                                      "Statistiche"),
-            (2,  "ram",        "RAM a celle",                                    "Statistiche"),
-            (3,  "gpu",        "Barra GPU",                                      "Statistiche"),
-            (4,  "dsk",        "Barra disco",                                    "Statistiche"),
-            (5,  "info",       "Info: temperatura, rete, uptime",                "Statistiche"),
-            (10, "glitch",     "Glitch (fasce spostate)",                        "Effetti"),
-            (11, "chroma",     "Separazione RGB sui titoli",                     "Effetti"),
-            (12, "scanlines",  "Scanline",                                       "Effetti"),
-            (13, "noise",      "Pixel di disturbo",                              "Effetti"),
-            (14, "typeon",     "Scrittura progressiva del testo",                "Effetti"),
-        ],
-    },
-    "alien": {
-        "title": "Alien MU-TH-UR 6000 (alien)",
-        "name_label": "Nome ufficiale:",
-        "screens": [
-            ("auto", "Automatica (nave se arrivano dati, altrimenti tracker)"),
-            ("system", "Stato della nave"),
-            ("tracker", "Motion tracker"),
-            ("term", "Terminale seriale"),
-            ("graph", "Grafico statistiche"),
-        ],
-        "elements": [
-            (14, "logo",      "Logo Weyland-Yutani nel boot",                    "Contenuti"),
-            (0,  "header",    "Intestazione Weyland-Yutani",                     "Contenuti"),
-            (1,  "title",     "Titolo sezione e linea ====",                     "Contenuti"),
-            (7,  "log",       "Conversazione / righe di stato",                  "Contenuti"),
-            (8,  "cursor",    "Prompt con cursore lampeggiante",                 "Contenuti"),
-            (15, "blips",     "Contatti sul motion tracker",                     "Contenuti"),
-            (2,  "cpu",       "REACTOR (CPU)",                                   "Statistiche"),
-            (3,  "ram",       "LIFE SUPPORT (RAM)",                              "Statistiche"),
-            (4,  "dsk",       "CARGO HOLD (disco)",                              "Statistiche"),
-            (5,  "gpu",       "MAIN DRIVE (GPU)",                                "Statistiche"),
-            (6,  "info",      "Temperature, comunicazioni, ibernazione",         "Statistiche"),
-            (9,  "scanlines", "Scanline (righe scure alternate)",                "Effetti CRT"),
-            (10, "scanbar",   "Barra di scansione che scende",                   "Effetti CRT"),
-            (11, "glow",      "Bagliore centrale / bordi scuri",                 "Effetti CRT"),
-            (12, "flicker",   "Sfarfallio del fosforo",                          "Effetti CRT"),
-            (13, "typeon",    "Scrittura progressiva del testo",                 "Effetti CRT"),
-        ],
-    },
-}
-
-# Grafico della schermata "graph" (comando G,<chiave>)
-GRAPHS = [
-    ("auto", "Automatico (a rotazione ogni 8 s)"),
-    ("cpu", "CPU"),
-    ("ram", "RAM"),
-    ("dsk", "Disco"),
-    ("gpu", "GPU"),
-    ("tmp", "Temperatura GPU"),
-    ("net", "Rete"),
-    ("png", "Latenza (ping)"),
-]
+APP_NAME = "PiPico Display Config"
+SETTINGS = os.path.join(HERE, "display_config.json")  # solo le preferenze di questa finestra
+STARTUP_LNK = os.path.join(os.environ.get("APPDATA", ""), "Microsoft", "Windows", "Start Menu", "Programs",
+                           "Startup", "PiPico Display Stats.lnk")
+MIN_FW = (1, 3, 0)  # versione minima del firmware con tutti i comandi usati qui
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+GREEN, ORANGE, RED, GRAY = "#1a8f3a", "#c77700", "#c0392b", "#777777"
 
 
 def stop_pc_stats():
@@ -185,423 +59,818 @@ def stop_pc_stats():
 
 
 def start_pc_stats():
-    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
+    flags = NO_WINDOW | getattr(subprocess, "DETACHED_PROCESS", 0)
     subprocess.Popen([sys.executable, os.path.join(HERE, "pc_stats.py")], creationflags=flags, close_fds=True)
 
 
 class App:
-    def __init__(self, root):
+    def __init__(self, root, shots_dir=None):
         self.root = root
-        root.title("Pico Display - debug")
+        self.shots_dir = shots_dir
+        self.running = True
         self.ser = None
         self.lock = threading.Lock()
         self.rx = queue.Queue()
-        self.running = True
+        self.want_conn = True
 
-        self.cfg = self.load_config()
-        self.build = tk.StringVar(value=self.cfg.get("build") if self.cfg.get("build") in BUILDS else "fallout")
-        self.port = tk.StringVar(value=self.cfg.get("port", ""))
-        self.status = tk.StringVar(value="Non collegato")
-        self.stats_txt = tk.StringVar(value="-")
-        self.raw = tk.StringVar()
-        self.send_stats = tk.BooleanVar(value=True)
-        self.stats_on = True  # copia letta dal thread delle statistiche (le variabili Tk solo dal thread principale)
-        self.el_vars, self.screen, self.name = {}, tk.StringVar(), tk.StringVar()
-        self.graph = tk.StringVar()
+        # stato del dispositivo
+        self.connected = False
+        self.port_name = ""
+        self.theme = None
+        self.themes = list(BUILDS)
+        self.fw = None
+        self.fw_date = ""
+        self.fps_info = ""
+        self.states = {}          # tema -> {"flags", "screen", "name"} (da DALL)
+        self.collecting = False
+        self.snap_busy = False
+        self.snap_t = 0.0
+        self.dirty = False
+        self.photo = None
+        self.state_seen = False
+
+        self.prefs = self.load_prefs()
+        self.stopped_stats = stop_pc_stats()
+
+        # variabili dell'interfaccia
+        self.status = tk.StringVar(value="Nessun dispositivo")
+        self.saved = tk.StringVar(value="")
+        self.fwinfo = tk.StringVar(value="")
+        self.theme_var = tk.StringVar()
+        self.screen = tk.StringVar()
+        self.name = tk.StringVar(value="SAMU")
+        self.graph = tk.StringVar(value="cpu")
+        self.el_vars = {}
         self.off_var = tk.IntVar(value=300)
         self.al_cpu, self.al_gpu, self.al_temp = tk.IntVar(value=90), tk.IntVar(value=90), tk.IntVar(value=85)
         self.al_beep = tk.BooleanVar(value=True)
-        self.state_seen = False
-        self.stopped_stats = stop_pc_stats()
+        self.spi_var = tk.StringVar(value="40")
+        self.send_stats = tk.BooleanVar(value=True)
+        self.stats_on = True
+        self.preview_on = tk.BooleanVar(value=self.prefs.get("preview", True))
+        self.scale = tk.IntVar(value=self.prefs.get("scale", 2))
+        self.autostart = tk.BooleanVar(value=os.path.exists(STARTUP_LNK))
+        self.raw = tk.StringVar()
+        self.fw_env = tk.StringVar(value="all")
 
-        self.build_static_ui()
-        self.load_build_vars()
-        self.build_dynamic_ui()
-        threading.Thread(target=self.stats_loop, daemon=True).start()
-        threading.Thread(target=self.reader_loop, daemon=True).start()
-        root.after(100, self.poll_rx)
-        root.after(300, self.connect)
+        self.build_ui()
+        self.rebuild_theme_dependent()
         root.protocol("WM_DELETE_WINDOW", self.close)
+        threading.Thread(target=self.conn_loop, daemon=True).start()
+        threading.Thread(target=self.reader_loop, daemon=True).start()
+        threading.Thread(target=self.stats_loop, daemon=True).start()
+        root.after(50, self.poll_rx)
+        root.after(500, self.preview_loop)
+        if shots_dir:
+            root.after(9000, self.take_shots)
 
-    # ---------- interfaccia ----------
-    def build_static_ui(self):
-        pad = {"padx": 6, "pady": 3}
-        top = ttk.Frame(self.root)
-        top.pack(fill="x", **pad)
-        ttk.Label(top, text="Porta:").pack(side="left")
-        ttk.Entry(top, textvariable=self.port, width=8).pack(side="left", padx=4)
-        ttk.Label(top, text="(vuoto = automatica)").pack(side="left")
-        ttk.Button(top, text="Collega", command=self.connect).pack(side="left", padx=4)
-        ttk.Button(top, text="Scollega", command=self.disconnect).pack(side="left")
-        ttk.Label(top, text="   Build:").pack(side="left")
-        cb = ttk.Combobox(top, textvariable=self.build, values=list(BUILDS), width=8, state="readonly")
-        cb.pack(side="left", padx=4)
-        cb.bind("<<ComboboxSelected>>", lambda _: self.request_build(self.build.get()))
-        ttk.Label(top, textvariable=self.status).pack(side="left", padx=8)
+    # ================= interfaccia =================
+    def build_ui(self):
+        root = self.root
+        root.title(APP_NAME)
+        root.geometry(self.prefs.get("geometry", "1060x700"))
+        root.minsize(900, 620)
+        icon = os.path.join(HERE, "app.ico")
+        if os.path.exists(icon):
+            try:
+                root.iconbitmap(icon)
+            except tk.TclError:
+                pass
 
-        body = ttk.Frame(self.root)
-        body.pack(fill="both", expand=True, **pad)
-        self.left = ttk.Frame(body)
-        self.left.pack(side="left", fill="y")
-        right = ttk.Frame(body)
-        right.pack(side="left", fill="both", expand=True, padx=(10, 0))
+        top = ttk.Frame(root)
+        top.pack(fill="x", padx=8, pady=(8, 0))
+        self.dot = tk.Label(top, text="●", fg=GRAY, font=("Segoe UI", 14))
+        self.dot.pack(side="left")
+        ttk.Label(top, textvariable=self.status, font=("Segoe UI", 10, "bold")).pack(side="left", padx=(2, 12))
+        self.saved_lbl = tk.Label(top, textvariable=self.saved, fg=GRAY, font=("Segoe UI", 10, "bold"))
+        self.saved_lbl.pack(side="right")
+        ttk.Button(top, text="Ricollega", command=self.reconnect).pack(side="right", padx=8)
+        tk.Label(root, anchor="w", fg=GRAY, font=("Segoe UI", 9),
+                 text="Le impostazioni vengono salvate nel dispositivo: dopo averle scelte puoi chiudere questo programma, "
+                      "il display si avvia sempre cosi'.").pack(fill="x", padx=10)
 
-        nf = ttk.LabelFrame(right, text="Dati")
-        nf.pack(fill="x", pady=3)
-        r1 = ttk.Frame(nf)
-        r1.pack(fill="x")
-        self.name_label = ttk.Label(r1, text="Nome:")
+        body = ttk.Frame(root)
+        body.pack(fill="both", expand=True, padx=8, pady=8)
+
+        # ---- anteprima ----
+        left = ttk.LabelFrame(body, text="Anteprima del display")
+        left.pack(side="left", fill="y")
+        self.preview_lbl = tk.Label(left, bg="black", width=30, height=15, text="in attesa del dispositivo...", fg="#888")
+        self.preview_lbl.pack(padx=6, pady=6)
+        pc = ttk.Frame(left)
+        pc.pack(fill="x", padx=6)
+        ttk.Checkbutton(pc, text="Aggiorna dal vivo", variable=self.preview_on).pack(anchor="w")
+        sc = ttk.Frame(pc)
+        sc.pack(anchor="w")
+        ttk.Label(sc, text="Ingrandimento:").pack(side="left")
+        for v in (1, 2):
+            ttk.Radiobutton(sc, text=f"{v}x", value=v, variable=self.scale).pack(side="left", padx=2)
+        ttk.Button(pc, text="Salva immagine...", command=self.save_snapshot).pack(anchor="w", pady=4)
+        tk.Label(left, textvariable=self.fwinfo, fg=GRAY, justify="left", font=("Segoe UI", 8)).pack(anchor="w", padx=8, pady=(0, 6))
+
+        # ---- schede ----
+        self.nb = ttk.Notebook(body)
+        self.nb.pack(side="left", fill="both", expand=True, padx=(10, 0))
+        self.tab_theme = ttk.Frame(self.nb)
+        self.tab_el = ttk.Frame(self.nb)
+        self.tab_data = ttk.Frame(self.nb)
+        self.tab_alarm = ttk.Frame(self.nb)
+        self.tab_prof = ttk.Frame(self.nb)
+        self.tab_adv = ttk.Frame(self.nb)
+        for tab, title in ((self.tab_theme, "Tema"), (self.tab_el, "Elementi"), (self.tab_data, "Dati e grafici"),
+                           (self.tab_alarm, "Allarmi e schermo"), (self.tab_prof, "Profili"), (self.tab_adv, "Avanzate")):
+            self.nb.add(tab, text=title)
+        self.build_theme_tab()
+        self.build_data_tab()
+        self.build_alarm_tab()
+        self.build_profiles_tab()
+        self.build_advanced_tab()
+
+    def build_theme_tab(self):
+        f = self.tab_theme
+        self.theme_box = ttk.LabelFrame(f, text="Tema (cambia subito sul display)")
+        self.theme_box.pack(fill="x", padx=8, pady=8)
+        self.screen_box = ttk.LabelFrame(f, text="Schermata")
+        self.screen_box.pack(fill="x", padx=8, pady=4)
+        nf = ttk.LabelFrame(f, text="Nome")
+        nf.pack(fill="x", padx=8, pady=4)
+        r = ttk.Frame(nf)
+        r.pack(fill="x", padx=6, pady=6)
+        self.name_label = ttk.Label(r, text="Nome:")
         self.name_label.pack(side="left")
-        ttk.Entry(r1, textvariable=self.name, width=16).pack(side="left", padx=4)
-        ttk.Button(r1, text="Invia", command=self.send_name).pack(side="left")
-        ro = ttk.Frame(nf)
-        ro.pack(fill="x", pady=2)
-        ttk.Label(ro, text="Spegni lo schermo dopo (s, 0 = mai):").pack(side="left")
-        ttk.Spinbox(ro, from_=0, to=3600, increment=30, textvariable=self.off_var, width=6).pack(side="left", padx=4)
-        ttk.Button(ro, text="Imposta", command=self.send_off).pack(side="left")
-        ra = ttk.LabelFrame(nf, text="Allarme (0 = soglia disattivata)")
-        ra.pack(fill="x", pady=2)
+        e = ttk.Entry(r, textvariable=self.name, width=18)
+        e.pack(side="left", padx=6)
+        e.bind("<Return>", lambda _: self.send_name())
+        ttk.Button(r, text="Imposta", command=self.send_name).pack(side="left")
+        b = ttk.Frame(f)
+        b.pack(fill="x", padx=8, pady=8)
+        ttk.Button(b, text="Rivedi il boot", command=lambda: self.send("M,boot")).pack(side="left")
+        ttk.Button(b, text="Pulisci terminale", command=lambda: self.send("clear")).pack(side="left", padx=6)
+
+    def build_data_tab(self):
+        f = self.tab_data
+        sb = ttk.LabelFrame(f, text="Statistiche del PC")
+        sb.pack(fill="x", padx=8, pady=8)
+        ttk.Checkbutton(sb, text="Invia le statistiche al display mentre questo programma e' aperto", variable=self.send_stats,
+                        command=lambda: setattr(self, "stats_on", self.send_stats.get())).pack(anchor="w", padx=6, pady=(6, 0))
+        self.stats_txt = tk.StringVar(value="-")
+        tk.Label(sb, textvariable=self.stats_txt, justify="left", font=("Consolas", 9), anchor="w").pack(fill="x", padx=6, pady=4)
+        ttk.Checkbutton(sb, text="Avvia l'invio delle statistiche con Windows (anche con questo programma chiuso)",
+                        variable=self.autostart, command=self.toggle_autostart).pack(anchor="w", padx=6, pady=(0, 6))
+        gb = ttk.LabelFrame(f, text="Grafico")
+        gb.pack(fill="x", padx=8, pady=4)
+        r = ttk.Frame(gb)
+        r.pack(fill="x", padx=6, pady=6)
+        ttk.Label(r, text="Statistica:").pack(side="left")
+        self.graph_combo = ttk.Combobox(r, values=[label for _, label in GRAPHS], width=34, state="readonly")
+        self.graph_combo.pack(side="left", padx=6)
+        self.graph_combo.current(1)
+        self.graph_combo.bind("<<ComboboxSelected>>", lambda _: self.pick_graph(GRAPHS[self.graph_combo.current()][0]))
+        ttk.Label(gb, text="Scegliendola il display passa alla schermata Grafico.").pack(anchor="w", padx=6, pady=(0, 6))
+
+    def build_alarm_tab(self):
+        f = self.tab_alarm
+        ab = ttk.LabelFrame(f, text="Allarme (0 = soglia disattivata)")
+        ab.pack(fill="x", padx=8, pady=8)
+        r = ttk.Frame(ab)
+        r.pack(fill="x", padx=6, pady=6)
         for label, var, hi in (("CPU %", self.al_cpu, 100), ("GPU %", self.al_gpu, 100), ("Temp. GPU C", self.al_temp, 150)):
-            ttk.Label(ra, text=label).pack(side="left", padx=(4, 0))
-            ttk.Spinbox(ra, from_=0, to=hi, textvariable=var, width=4).pack(side="left", padx=(2, 4))
-        ttk.Checkbutton(ra, text="Cicalino (GP13)", variable=self.al_beep).pack(side="left", padx=4)
-        ttk.Button(ra, text="Imposta", command=self.send_alarm).pack(side="left", padx=4)
-        rg = ttk.Frame(nf)
-        rg.pack(fill="x", pady=2)
-        ttk.Label(rg, text="Grafico:").pack(side="left")
-        gc = ttk.Combobox(rg, values=[label for _, label in GRAPHS], width=32, state="readonly")
-        gc.pack(side="left", padx=4)
-        gc.bind("<<ComboboxSelected>>", lambda _: self.pick_graph(GRAPHS[gc.current()][0]))
-        self.graph_combo = gc
-        ttk.Label(rg, text="(passa alla schermata Grafico)").pack(side="left")
-        ttk.Checkbutton(nf, text="Invia le statistiche del PC (ogni secondo)", variable=self.send_stats,
-                        command=lambda: setattr(self, "stats_on", self.send_stats.get())).pack(anchor="w")
-        ttk.Label(nf, textvariable=self.stats_txt, font=("Consolas", 9)).pack(anchor="w")
-        r2 = ttk.Frame(nf)
-        r2.pack(fill="x", pady=2)
-        ttk.Label(r2, text="Riga da inviare:").pack(side="left")
-        e = ttk.Entry(r2, textvariable=self.raw, width=26)
-        e.pack(side="left", padx=4)
+            ttk.Label(r, text=label).pack(side="left", padx=(0, 2))
+            ttk.Spinbox(r, from_=0, to=hi, textvariable=var, width=5).pack(side="left", padx=(0, 10))
+        r2 = ttk.Frame(ab)
+        r2.pack(fill="x", padx=6, pady=(0, 6))
+        ttk.Checkbutton(r2, text="Cicalino (GP13)", variable=self.al_beep).pack(side="left")
+        ttk.Button(r2, text="Imposta", command=self.send_alarm).pack(side="left", padx=10)
+        ttk.Button(r2, text="Prova l'allarme (2,5 s)", command=self.test_alarm).pack(side="left")
+        sb = ttk.LabelFrame(f, text="Schermo")
+        sb.pack(fill="x", padx=8, pady=4)
+        r3 = ttk.Frame(sb)
+        r3.pack(fill="x", padx=6, pady=6)
+        ttk.Label(r3, text="Spegni lo schermo dopo (secondi, 0 = mai):").pack(side="left")
+        ttk.Spinbox(r3, from_=0, to=3600, increment=30, textvariable=self.off_var, width=6).pack(side="left", padx=6)
+        ttk.Button(r3, text="Imposta", command=self.send_off).pack(side="left")
+        ttk.Label(sb, text="Lo schermo si spegne quando non arriva nulla (per esempio con il PC spento) e riparte al primo dato.").pack(
+            anchor="w", padx=6, pady=(0, 6))
+
+    def build_profiles_tab(self):
+        f = self.tab_prof
+        pb = ttk.LabelFrame(f, text="Profilo = tutta la configurazione (tutti i temi, allarmi, schermo)")
+        pb.pack(fill="x", padx=8, pady=8)
+        r = ttk.Frame(pb)
+        r.pack(fill="x", padx=6, pady=6)
+        ttk.Button(r, text="Esporta profilo...", command=self.export_profile).pack(side="left")
+        ttk.Button(r, text="Importa e applica...", command=self.import_profile).pack(side="left", padx=8)
+        prb = ttk.LabelFrame(f, text="Preset per il tema attivo (modificano gli elementi visibili)")
+        prb.pack(fill="x", padx=8, pady=4)
+        r = ttk.Frame(prb)
+        r.pack(fill="x", padx=6, pady=6)
+        for text, mode in (("Tutto acceso", "all"), ("Senza effetti CRT", "noeffects"), ("Solo statistiche", "stats"), ("Tutto spento", "none")):
+            ttk.Button(r, text=text, command=lambda m=mode: self.preset(m)).pack(side="left", padx=(0, 6))
+        nb = ttk.LabelFrame(f, text="Note (per te o per Claude)")
+        nb.pack(fill="both", expand=True, padx=8, pady=4)
+        self.notes = tk.Text(nb, height=6, wrap="word")
+        self.notes.pack(fill="both", expand=True, padx=6, pady=6)
+        self.notes.insert("1.0", self.prefs.get("notes", ""))
+        ttk.Button(f, text="Copia il riepilogo negli appunti", command=self.copy_summary).pack(anchor="w", padx=8, pady=(0, 8))
+
+    def build_advanced_tab(self):
+        f = self.tab_adv
+        ib = ttk.LabelFrame(f, text="Dispositivo")
+        ib.pack(fill="x", padx=8, pady=8)
+        self.advinfo = tk.StringVar(value="-")
+        tk.Label(ib, textvariable=self.advinfo, justify="left", anchor="w", font=("Consolas", 9)).pack(fill="x", padx=6, pady=6)
+        r = ttk.Frame(ib)
+        r.pack(fill="x", padx=6, pady=(0, 6))
+        ttk.Label(r, text="Velocita' SPI (MHz):").pack(side="left")
+        ttk.Combobox(r, textvariable=self.spi_var, values=("20", "25", "33", "40", "50", "62"), width=5, state="readonly").pack(side="left", padx=6)
+        ttk.Button(r, text="Imposta", command=self.send_spi).pack(side="left")
+        ttk.Button(r, text="Misura i fotogrammi/s", command=lambda: self.send("FPS")).pack(side="left", padx=10)
+        ttk.Label(ib, text="40 e' il valore sicuro (33 MHz reali). 50 e' piu' fluido ma richiede fili corti: se il display mostra pixel sporchi, torna a 40.").pack(
+            anchor="w", padx=6, pady=(0, 6))
+        fb = ttk.LabelFrame(f, text="Firmware")
+        fb.pack(fill="x", padx=8, pady=4)
+        r = ttk.Frame(fb)
+        r.pack(fill="x", padx=6, pady=6)
+        ttk.Label(r, text="Ambiente:").pack(side="left")
+        ttk.Combobox(r, textvariable=self.fw_env, values=["all"] + list(BUILDS), width=10, state="readonly").pack(side="left", padx=6)
+        ttk.Button(r, text="Compila e carica sul Pico", command=self.update_firmware).pack(side="left")
+        ttk.Button(r, text="Valori di fabbrica...", command=self.factory_reset).pack(side="right")
+        cb = ttk.LabelFrame(f, text="Console")
+        cb.pack(fill="both", expand=True, padx=8, pady=4)
+        self.log = tk.Text(cb, height=10, state="disabled", font=("Consolas", 9))
+        self.log.pack(fill="both", expand=True, padx=6, pady=(6, 0))
+        r = ttk.Frame(cb)
+        r.pack(fill="x", padx=6, pady=6)
+        e = ttk.Entry(r, textvariable=self.raw)
+        e.pack(side="left", fill="x", expand=True)
         e.bind("<Return>", lambda _: self.send_raw())
-        ttk.Button(r2, text="Invia", command=self.send_raw).pack(side="left")
+        ttk.Button(r, text="Invia", command=self.send_raw).pack(side="left", padx=6)
 
-        notef = ttk.LabelFrame(right, text="Note per Claude (cosa ti piace, cosa cambiare)")
-        notef.pack(fill="both", expand=True, pady=3)
-        self.notes = tk.Text(notef, height=6, width=50, wrap="word")
-        self.notes.pack(fill="both", expand=True)
-        cf = ttk.Frame(right)
-        cf.pack(fill="x", pady=3)
-        ttk.Button(cf, text="Salva configurazione", command=self.save_config).pack(side="left")
-        ttk.Button(cf, text="Copia per Claude", command=self.copy_for_claude).pack(side="left", padx=4)
-
-        lf = ttk.LabelFrame(right, text="Risposte del Pico")
-        lf.pack(fill="both", expand=True, pady=3)
-        self.log = tk.Text(lf, height=8, width=50, state="disabled", font=("Consolas", 9))
-        self.log.pack(fill="both", expand=True)
-
-    def build_dynamic_ui(self):
-        """Caselle e schermate della build corrente (ricostruite quando cambia la build)."""
-        for w in self.left.winfo_children():
+    def rebuild_theme_dependent(self):
+        """Riempie le parti che dipendono dal tema attivo: elenco temi, schermate, elementi."""
+        for box in (self.theme_box, self.screen_box):
+            for w in box.winfo_children():
+                w.destroy()
+        for tid in self.themes:
+            title, desc = THEME_INFO.get(tid, (tid, ""))
+            row = ttk.Frame(self.theme_box)
+            row.pack(fill="x", padx=6, pady=2)
+            ttk.Radiobutton(row, text=title, value=tid, variable=self.theme_var, command=lambda t=tid: self.request_theme(t)).pack(anchor="w")
+            tk.Label(row, text=desc, fg=GRAY, anchor="w", justify="left", wraplength=470, font=("Segoe UI", 8)).pack(anchor="w", padx=22)
+        b = BUILDS.get(self.theme)
+        self.name_label.configure(text=b["name_label"] if b else "Nome:")
+        if b:
+            for key, label in b["screens"]:
+                ttk.Radiobutton(self.screen_box, text=label, value=key, variable=self.screen, command=self.send_screen).pack(anchor="w", padx=6, pady=1)
+        # elementi
+        for w in self.tab_el.winfo_children():
             w.destroy()
-        b = BUILDS[self.build.get()]
-        self.name_label.configure(text=b["name_label"])
-
-        sf = ttk.LabelFrame(self.left, text=f"Schermata - {b['title']}")
-        sf.pack(fill="x", pady=3)
-        for key, label in b["screens"]:
-            ttk.Radiobutton(sf, text=label, value=key, variable=self.screen, command=self.send_screen).pack(anchor="w")
-        bf = ttk.Frame(sf)
-        bf.pack(anchor="w", pady=2)
-        ttk.Button(bf, text="Rivedi il boot", command=lambda: self.send("M,boot")).pack(side="left")
-        ttk.Button(bf, text="Pulisci terminale", command=lambda: self.send("clear")).pack(side="left", padx=4)
-
+        if not b:
+            ttk.Label(self.tab_el, text="Collega il dispositivo per vedere gli elementi del tema.").pack(padx=10, pady=10)
+            return
+        old = {k: v.get() for k, v in self.el_vars.items()}
+        self.el_vars = {k: tk.BooleanVar(value=old.get(k, True)) for _, k, _, _ in b["elements"]}
         groups = {}
+        cols = ttk.Frame(self.tab_el)
+        cols.pack(fill="both", expand=True, padx=6, pady=6)
+        colframes = [ttk.Frame(cols), ttk.Frame(cols)]
+        colframes[0].pack(side="left", fill="both", expand=True, anchor="n")
+        colframes[1].pack(side="left", fill="both", expand=True, anchor="n")
         for bit, key, label, group in b["elements"]:
             if group not in groups:
-                groups[group] = ttk.LabelFrame(self.left, text=group)
-                groups[group].pack(fill="x", pady=3)
-            ttk.Checkbutton(groups[group], text=label, variable=self.el_vars[key], command=self.send_flags).pack(anchor="w")
-        af = ttk.Frame(self.left)
-        af.pack(fill="x", pady=2)
-        ttk.Button(af, text="Tutto acceso", command=lambda: self.set_all(True)).pack(side="left")
-        ttk.Button(af, text="Tutto spento", command=lambda: self.set_all(False)).pack(side="left", padx=4)
+                groups[group] = ttk.LabelFrame(colframes[len(groups) % 2], text=group)
+                groups[group].pack(fill="x", padx=4, pady=4)
+            ttk.Checkbutton(groups[group], text=label, variable=self.el_vars[key], command=self.send_flags).pack(anchor="w", padx=4, pady=1)
 
-    def load_build_vars(self):
-        """Carica nelle variabili Tk la configurazione salvata della build corrente."""
-        name = self.build.get()
-        b, c = BUILDS[name], self.cfg.get(name, {})
-        self.el_vars = {k: tk.BooleanVar(value=c.get("elements", {}).get(k, True)) for _, k, _, _ in b["elements"]}
-        screens = [k for k, _ in b["screens"]]
-        self.screen.set(c.get("screen") if c.get("screen") in screens else screens[0])
-        self.name.set(c.get("name", "SAMU"))
-        keys = [k for k, _ in GRAPHS]
-        self.graph.set(c.get("graph") if c.get("graph") in keys else "cpu")
-        if hasattr(self, "graph_combo"):
-            self.graph_combo.current(keys.index(self.graph.get()))
-        self.notes.delete("1.0", "end")
-        self.notes.insert("1.0", c.get("notes", ""))
+    # ================= salvataggio / stato =================
+    def mark_dirty(self):
+        self.dirty = True
+        self.saved.set("Salvataggio nel dispositivo...")
+        self.saved_lbl.configure(fg=ORANGE)
 
-    def switch_build(self, name, send):
-        if name not in BUILDS:
-            return
-        self.cfg[self.build.get()] = self.build_config()  # conserva le scelte della build lasciata
-        self.build.set(name)
-        self.load_build_vars()
-        self.build_dynamic_ui()
-        if send:
-            self.send_all()
+    def mark_saved(self):
+        if self.dirty or not self.saved.get():
+            self.dirty = False
+            self.saved.set("✓ Salvato nel dispositivo")
+            self.saved_lbl.configure(fg=GREEN)
 
-    def logmsg(self, msg):
-        self.log.configure(state="normal")
-        self.log.insert("end", msg + "\n")
-        self.log.see("end")
-        self.log.configure(state="disabled")
+    def set_status(self, text, color):
+        self.status.set(text)
+        self.dot.configure(fg=color)
 
-    # ---------- seriale ----------
-    def connect(self):
-        self.disconnect()
-        port = self.port.get().strip() or find_port()
-        if not port:
-            self.status.set("Pico non trovato")
-            return
-        try:
-            s = serial.Serial(port, 115200, timeout=0.2, write_timeout=1)
-        except serial.SerialException as e:
-            self.status.set(f"Errore su {port}")
-            self.logmsg(f"Impossibile aprire {port}: {e}\n(pc_stats.py o il Serial Monitor sono aperti? Chiudili.)")
-            return
+    # ================= seriale =================
+    def conn_loop(self):
+        last = None
+        while self.running:
+            if self.want_conn and self.ser is None:
+                port = find_port()
+                if port:
+                    try:
+                        s = serial.Serial(port, 115200, timeout=0.2, write_timeout=1)
+                        with self.lock:
+                            self.ser = s
+                        self.rx.put(("connected", port))
+                        last = None
+                    except serial.SerialException as e:
+                        msg = f"Impossibile aprire {port}: {e}. Un altro programma usa la porta (pc_stats.py, Serial Monitor)?"
+                        if msg != last:
+                            self.rx.put(("conn_error", msg))
+                            last = msg
+                elif last != "none":
+                    self.rx.put(("nodevice", ""))
+                    last = "none"
+            time.sleep(1.5)
+
+    def drop(self):
         with self.lock:
-            self.ser = s
-        self.status.set(f"Collegato a {port}")
-        self.logmsg(f"Collegato a {port}, leggo lo stato dal Pico...")
-        self.state_seen = False
-        self.send("?")
-        self.send("D")
-        self.root.after(3500, self.fallback_push)
+            s, self.ser = self.ser, None
+        if s:
+            try:
+                s.close()
+            except Exception:
+                pass
+        self.rx.put(("disconnected", ""))
 
-    def disconnect(self):
-        with self.lock:
-            if self.ser:
-                try:
-                    self.ser.close()
-                except Exception:
-                    pass
-            self.ser = None
-        self.status.set("Non collegato")
+    def reconnect(self):
+        self.want_conn = True
+        self.drop()
 
-    def send(self, line):
+    def send(self, line, cfg=False):
         with self.lock:
             s = self.ser
-            if not s:
-                return False
-            try:
-                s.write((line + "\n").encode())
-                return True
-            except (serial.SerialException, OSError):
-                self.ser = None
-        self.root.after(0, lambda: self.status.set("Collegamento perso"))
-        return False
+        if not s:
+            return False
+        try:
+            s.write((line + "\n").encode())
+        except (serial.SerialException, OSError):
+            self.drop()
+            return False
+        if cfg:
+            self.root.after(0, self.mark_dirty)
+        return True
+
+    def read_exact(self, s, n, timeout):
+        end = time.time() + timeout
+        buf = bytearray()
+        while len(buf) < n and time.time() < end:
+            buf += s.read(n - len(buf))
+        return bytes(buf)
 
     def reader_loop(self):
         while self.running:
             with self.lock:
                 s = self.ser
             if not s:
-                time.sleep(0.3)
+                time.sleep(0.2)
                 continue
             try:
-                data = s.readline()
-            except (serial.SerialException, OSError, TypeError):
+                raw = s.readline()
+                if not raw:
+                    continue
+                text = raw.decode(errors="replace").strip()
+                if text.startswith("SNAP,"):
+                    _, w, h, bpp = text.split(",")
+                    n = int(w) * int(h) * int(bpp)
+                    data = self.read_exact(s, n, 3.0)
+                    if len(data) == n:
+                        self.rx.put(("snap", (int(w), int(h), data)))
+                    else:
+                        self.rx.put(("snap_fail", ""))
+                elif text:
+                    self.rx.put(("line", text))
+            except (serial.SerialException, OSError, TypeError, ValueError):
+                self.drop()
                 time.sleep(0.3)
-                continue
-            if data:
-                self.rx.put(data.decode(errors="replace").strip())
 
+    # ================= messaggi dal Pico =================
     def poll_rx(self):
-        while not self.rx.empty():
-            msg = self.rx.get()
-            self.logmsg("< " + msg)
-            if msg.startswith("ID,"):
-                name = msg[3:].strip()
-                self.logmsg(f"Sul Pico c'e' il tema '{name}'")
-                if name != self.build.get():
-                    self.switch_build(name, send=False)
-                    self.send("D")  # legge lo stato salvato di questo tema
-            elif msg.startswith("STATE,"):
-                self.apply_state(msg)
+        try:
+            for _ in range(60):
+                kind, val = self.rx.get_nowait()
+                self.handle(kind, val)
+        except queue.Empty:
+            pass
         if self.running:
-            self.root.after(100, self.poll_rx)
+            self.root.after(40, self.poll_rx)
 
-    def request_build(self, name):
-        """Chiede al Pico di cambiare tema; la vista cambia quando arriva ID,<tema>."""
-        if not self.send("T," + name):
-            self.switch_build(name, send=False)  # non collegato: cambia solo la vista
+    def handle(self, kind, val):
+        if kind == "connected":
+            self.connected = True
+            self.port_name = val
+            self.state_seen = False
+            self.set_status(f"Collegato a {val}", GREEN)
+            self.logmsg(f"Collegato a {val}")
+            for c in ("?", "V", "L", "D", "FPS"):
+                self.send(c)
+            self.root.after(4000, self.check_state_seen)
+        elif kind == "disconnected":
+            self.connected = False
+            self.snap_busy = False
+            self.set_status("Dispositivo scollegato: ricollegalo, mi ricollego da solo", RED)
+            self.saved.set("")
+        elif kind == "nodevice":
+            self.set_status("Nessun dispositivo: collega il Pico", GRAY)
+        elif kind == "conn_error":
+            self.set_status("Porta occupata", RED)
+            self.logmsg(val)
+        elif kind == "snap":
+            self.show_snapshot(*val)
+        elif kind == "snap_fail":
+            self.snap_busy = False
+        elif kind == "line":
+            self.handle_line(val)
 
-    def fallback_push(self):
-        if not self.state_seen and self.ser:
-            self.logmsg("Il Pico non ha risposto a D (firmware vecchio?): invio la configurazione della GUI")
-            self.send_all()
+    def handle_line(self, msg):
+        if not msg.startswith("STATE,"):
+            self.logmsg("< " + msg)
+        if msg.startswith("ID,"):
+            self.set_theme(msg[3:].strip())
+            self.send("D")
+        elif msg.startswith("VER,"):
+            p = msg.split(",", 2)
+            self.fw, self.fw_date = p[1], (p[2] if len(p) > 2 else "")
+            self.update_info()
+            try:
+                if tuple(int(x) for x in self.fw.split(".")) < MIN_FW:
+                    messagebox.showwarning(APP_NAME, f"Il firmware sul Pico e' la versione {self.fw}: serve almeno {'.'.join(map(str, MIN_FW))}.\n"
+                                           "Aggiornalo dalla scheda Avanzate.")
+            except ValueError:
+                pass
+        elif msg.startswith("LIST,"):
+            self.themes = [t for t in msg.split(",")[1:] if t in BUILDS] or list(BUILDS)
+            self.rebuild_theme_dependent()
+        elif msg.startswith("STATE,"):
+            self.apply_state(msg)
+        elif msg.startswith("SAVED"):
+            self.mark_saved()
+        elif msg.startswith("FPS,"):
+            self.fps_info = msg
+            self.update_info()
+        elif msg.startswith("ERR"):
+            self.saved.set(msg)
+            self.saved_lbl.configure(fg=RED)
+
+    def check_state_seen(self):
+        if self.connected and not self.state_seen:
+            self.logmsg("Il Pico non ha risposto a D: firmware vecchio. Aggiornalo dalla scheda Avanzate.")
+            self.set_status(f"Collegato a {self.port_name} (firmware vecchio)", ORANGE)
+
+    def set_theme(self, tid):
+        if tid not in BUILDS:
+            return
+        changed = tid != self.theme
+        self.theme = tid
+        self.theme_var.set(tid)
+        if changed:
+            self.rebuild_theme_dependent()
+        self.update_info()
 
     def apply_state(self, msg):
-        """STATE,tema,elementi,schermata,spegnimento,metrica,auto,cpu,gpu,temp,cicalino,nome: imposta la GUI come il Pico."""
+        """STATE,tema,elementi,schermata,spegnimento,metrica,auto,cpu,gpu,temp,cicalino,nome"""
         p = msg.split(",", 11)
         if len(p) < 12:
             return
         _, tid, flags, screen, off, gm, ga, ac, ag, at, ab, name = p
         if tid not in BUILDS:
             return
-        if tid != self.build.get():
-            self.switch_build(tid, send=False)
-        b = BUILDS[tid]
         flags, scr = int(flags), int(screen)
-        if b.get("flags", True) and flags:  # 0 = non ancora impostato sul Pico
-            for bit, key, _, _ in b["elements"]:
-                self.el_vars[key].set(bool((flags >> bit) & 1))
-        screens = [k for k, _ in b["screens"]]
-        if scr < len(screens):
-            self.screen.set(screens[scr])
+        self.states[tid] = {"flags": flags, "screen": scr, "name": name}
+        if self.collecting:
+            return
         self.off_var.set(int(off))
-        keys = [k for k, _ in GRAPHS]
-        metric = ["cpu", "ram", "dsk", "gpu", "tmp", "net", "png"][min(int(gm), 6)]
-        self.al_cpu.set(int(ac)); self.al_gpu.set(int(ag)); self.al_temp.set(int(at)); self.al_beep.set(bool(int(ab)))
+        metric = METRICS[min(int(gm), len(METRICS) - 1)]
         self.graph.set("auto" if int(ga) else metric)
+        keys = [k for k, _ in GRAPHS]
         self.graph_combo.current(keys.index(self.graph.get()))
-        if name:
-            self.name.set(name)
+        self.al_cpu.set(int(ac))
+        self.al_gpu.set(int(ag))
+        self.al_temp.set(int(at))
+        self.al_beep.set(bool(int(ab)))
+        if tid == self.theme or self.theme is None:
+            self.set_theme(tid)
+            b = BUILDS[tid]
+            for bit, key, _, _ in b["elements"]:
+                self.el_vars[key].set(bool((flags >> bit) & 1) if flags else True)
+            screens = [k for k, _ in b["screens"]]
+            if scr < len(screens):
+                self.screen.set(screens[scr])
+            if name:
+                self.name.set(name)
         self.state_seen = True
-        self.logmsg("Stato letto dal Pico: caselle aggiornate")
+        if not self.dirty:
+            self.saved.set("✓ Salvato nel dispositivo")
+            self.saved_lbl.configure(fg=GREEN)
+
+    def update_info(self):
+        t = THEME_INFO.get(self.theme, (self.theme or "-", ""))[0]
+        self.fwinfo.set(f"Tema: {t}\nFirmware: {self.fw or '-'}")
+        self.advinfo.set(f"Porta: {self.port_name or '-'}\nFirmware: {self.fw or '-'}  ({self.fw_date})\n"
+                         f"Tema attivo: {self.theme or '-'}   Temi nel firmware: {', '.join(self.themes)}\n{self.fps_info}")
+        if "spi=" in self.fps_info:
+            try:
+                self.spi_var.set(self.fps_info.split("spi=")[1].split(",")[0])
+            except IndexError:
+                pass
+
+    def logmsg(self, msg):
+        self.log.configure(state="normal")
+        self.log.insert("end", datetime.datetime.now().strftime("%H:%M:%S ") + msg + "\n")
+        self.log.see("end")
+        self.log.configure(state="disabled")
+
+    # ================= comandi =================
+    def mask(self):
+        b = BUILDS[self.theme]
+        return sum(1 << bit for bit, key, _, _ in b["elements"] if self.el_vars[key].get())
+
+    def send_flags(self):
+        if self.theme:
+            self.send(f"C,{self.mask()}", cfg=True)
+
+    def send_screen(self):
+        self.send(f"M,{self.screen.get()}", cfg=True)
+
+    def send_name(self):
+        self.send(f"N,{self.name.get().strip()[:16]}", cfg=True)
+
+    def request_theme(self, tid):
+        if not self.send(f"T,{tid}", cfg=True):
+            self.theme_var.set(self.theme or "")
+
+    def pick_graph(self, key):
+        self.graph.set(key)
+        self.send(f"G,{key}", cfg=True)
+        if self.theme:
+            screens = [k for k, _ in BUILDS[self.theme]["screens"]]
+            if "graph" in screens:
+                self.screen.set("graph")
+                self.send("M,graph", cfg=True)
 
     def send_alarm(self):
         try:
-            self.send(f"A,{int(self.al_cpu.get())},{int(self.al_gpu.get())},{int(self.al_temp.get())},{1 if self.al_beep.get() else 0}")
+            self.send(f"A,{int(self.al_cpu.get())},{int(self.al_gpu.get())},{int(self.al_temp.get())},{1 if self.al_beep.get() else 0}", cfg=True)
         except tk.TclError:
             pass
+
+    def test_alarm(self):
+        self.send(f"A,1,1,1,{1 if self.al_beep.get() else 0}")
+        self.root.after(2500, self.send_alarm)  # ripristina le soglie prima del salvataggio nella flash (3 s)
 
     def send_off(self):
         try:
-            self.send(f"B,{int(self.off_var.get())}")
+            self.send(f"B,{int(self.off_var.get())}", cfg=True)
         except tk.TclError:
             pass
 
-    # ---------- comandi ----------
-    def mask(self):
-        return sum(1 << bit for bit, key, _, _ in BUILDS[self.build.get()]["elements"] if self.el_vars[key].get())
-
-    def has_flags(self):
-        return BUILDS[self.build.get()].get("flags", True)
-
-    def send_flags(self):
-        if self.has_flags():
-            self.send(f"C,{self.mask()}")
-
-    def send_screen(self):
-        self.send(f"M,{self.screen.get()}")
-
-    def send_name(self):
-        if self.has_flags():
-            self.send(f"N,{self.name.get().strip()[:16]}")
-
-    def send_graph(self):
-        self.send(f"G,{self.graph.get()}")
-
-    def pick_graph(self, key):
-        """Sceglie il grafico e passa alla schermata Grafico."""
-        self.graph.set(key)
-        self.send_graph()
-        self.screen.set("graph")
-        self.send_screen()
-
-    def send_all(self):
-        self.send_flags()
-        self.send_graph()
-        self.send_screen()
-        self.send_name()
+    def send_spi(self):
+        self.send(f"SPI,{self.spi_var.get()}", cfg=True)
+        self.root.after(1500, lambda: self.send("FPS"))
 
     def send_raw(self):
         if self.raw.get().strip():
             self.send(self.raw.get().strip())
+            self.logmsg("> " + self.raw.get().strip())
             self.raw.set("")
 
-    def set_all(self, value):
-        for v in self.el_vars.values():
-            v.set(value)
+    def preset(self, mode):
+        if not self.theme:
+            return
+        b = BUILDS[self.theme]
+        for bit, key, label, group in b["elements"]:
+            if mode == "all":
+                v = True
+            elif mode == "none":
+                v = False
+            elif mode == "noeffects":
+                v = not group.startswith("Effetti")
+            else:  # solo statistiche
+                v = group == "Statistiche" or key in ("header", "title")
+            self.el_vars[key].set(v)
         self.send_flags()
 
+    def toggle_autostart(self):
+        script = os.path.join(HERE, "autostart.ps1")
+        args = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script]
+        if not self.autostart.get():
+            args.append("-Remove")
+        try:
+            subprocess.run(args, capture_output=True, timeout=30, creationflags=NO_WINDOW)
+        except Exception as e:
+            messagebox.showerror(APP_NAME, str(e))
+        self.autostart.set(os.path.exists(STARTUP_LNK))
+
+    # ================= anteprima =================
+    def preview_loop(self):
+        if self.running:
+            if self.preview_on.get() and self.connected and not self.snap_busy:
+                self.snap_busy = True
+                self.snap_t = time.time()
+                if not self.send("SNAP"):
+                    self.snap_busy = False
+            elif self.snap_busy and time.time() - self.snap_t > 4:
+                self.snap_busy = False
+            self.root.after(350, self.preview_loop)
+
+    def show_snapshot(self, w, h, data):
+        self.snap_busy = False
+        self.last_snap = (w, h, data)
+        try:
+            photo = tk.PhotoImage(data=rgb565_to_ppm(data, w, h))
+            if self.scale.get() > 1:
+                photo = photo.zoom(self.scale.get())
+            self.photo = photo
+            self.preview_lbl.configure(image=photo, width=photo.width(), height=photo.height(), text="")
+        except tk.TclError as e:
+            self.logmsg(f"Anteprima non disegnabile: {e}")
+
+    def save_snapshot(self):
+        snap = getattr(self, "last_snap", None)
+        if not snap:
+            messagebox.showinfo(APP_NAME, "Nessuna anteprima disponibile.")
+            return
+        w, h, data = snap
+        path = filedialog.asksaveasfilename(defaultextension=".png", filetypes=[("PNG", "*.png"), ("PPM", "*.ppm")],
+                                            initialfile="display.png")
+        if not path:
+            return
+        try:
+            from PIL import Image
+            from snap import rgb565_to_rgb
+            Image.frombytes("RGB", (w, h), rgb565_to_rgb(data, w, h)).resize((w * 2, h * 2), Image.NEAREST).save(path)
+        except ImportError:
+            with open(os.path.splitext(path)[0] + ".ppm", "wb") as f:
+                f.write(rgb565_to_ppm(data, w, h))
+
+    # ================= statistiche =================
     def stats_loop(self):
         col = Collector()
         while self.running:
             time.sleep(1)
             lines = col.lines()
             self.root.after(0, lambda s=col.summary: self.stats_txt.set(s))
-            if self.stats_on:
+            if self.stats_on and self.connected:
                 for line in lines:
                     self.send(line)
 
-    # ---------- configurazione ----------
-    def load_config(self):
-        try:
-            with open(CONFIG_JSON, encoding="utf-8") as f:
-                cfg = json.load(f)
-        except Exception:
-            return {}
-        if "elements" in cfg and "fallout" not in cfg:  # vecchio formato (solo fallout)
-            cfg = {"build": "fallout", "port": cfg.get("port", ""), "fallout": cfg}
-        return cfg
+    # ================= profili =================
+    def export_profile(self):
+        if not self.connected:
+            messagebox.showinfo(APP_NAME, "Collega il dispositivo.")
+            return
+        self.collecting = True
+        self.states = {}
+        self.send("DALL")
+        self.root.after(1500, self._finish_export)
 
-    def build_config(self):
+    def _finish_export(self):
+        self.collecting = False
+        prof = self.current_profile()
+        path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("Profilo PiPico", "*.json")], initialfile="profilo.json")
+        if path:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(prof, f, indent=2, ensure_ascii=False)
+            self.logmsg(f"Profilo salvato in {path}")
+        self.send("D")
+
+    def current_profile(self):
         return {
-            "screen": self.screen.get(),
-            "name": self.name.get().strip(),
-            "mask": self.mask(),
+            "format": "pipico-profile", "version": 1, "theme": self.theme,
+            "off": int(self.off_var.get()),
+            "alarm": {"cpu": int(self.al_cpu.get()), "gpu": int(self.al_gpu.get()), "temp": int(self.al_temp.get()), "beep": bool(self.al_beep.get())},
             "graph": self.graph.get(),
-            "elements": {k: v.get() for k, v in self.el_vars.items()},
+            "themes": self.states,
             "notes": self.notes.get("1.0", "end").strip(),
         }
 
+    def import_profile(self):
+        if not self.connected:
+            messagebox.showinfo(APP_NAME, "Collega il dispositivo.")
+            return
+        path = filedialog.askopenfilename(filetypes=[("Profilo PiPico", "*.json")])
+        if not path:
+            return
+        try:
+            with open(path, encoding="utf-8") as f:
+                p = json.load(f)
+            assert p.get("format") == "pipico-profile"
+        except Exception:
+            messagebox.showerror(APP_NAME, "Il file non e' un profilo PiPico valido.")
+            return
+        for tid, st in p.get("themes", {}).items():
+            if tid in self.themes:
+                self.send(f"W,{tid},{st['flags']},{st['screen']},{st.get('name', '')}", cfg=True)
+        a = p.get("alarm", {})
+        self.send(f"A,{a.get('cpu', 90)},{a.get('gpu', 90)},{a.get('temp', 85)},{1 if a.get('beep', True) else 0}", cfg=True)
+        self.send(f"B,{p.get('off', 300)}", cfg=True)
+        g = p.get("graph", "cpu")
+        if g in [k for k, _ in GRAPHS]:
+            self.send(f"G,{g}", cfg=True)
+        if p.get("theme") in self.themes and p["theme"] != self.theme:
+            self.send(f"T,{p['theme']}", cfg=True)
+        self.send("D")
+        self.logmsg(f"Profilo applicato: {path}")
+
     def summary(self):
-        b = BUILDS[self.build.get()]
-        c = self.build_config()
-        keep = [label for _, key, label, _ in b["elements"] if c["elements"][key]]
-        drop = [label for _, key, label, _ in b["elements"] if not c["elements"][key]]
-        lines = [
-            f"Configurazione display - build {self.build.get()} ({b['title']})",
-            f"Schermata: {dict(b['screens'])[c['screen']]}",
-            f"{b['name_label']} {c['name']}",
-            f"Grafico: {dict(GRAPHS)[c['graph']]}",
-            f"Maschera: C,{c['mask']}",
-            "TENERE: " + (", ".join(keep) or "-"),
-            "TOGLIERE: " + (", ".join(drop) or "-"),
-        ]
-        if c["notes"]:
-            lines += ["Note:", c["notes"]]
+        if not self.theme:
+            return "Nessun dispositivo collegato."
+        b = BUILDS[self.theme]
+        keep = [label for _, key, label, _ in b["elements"] if self.el_vars[key].get()]
+        drop = [label for _, key, label, _ in b["elements"] if not self.el_vars[key].get()]
+        lines = [f"Configurazione display - tema {self.theme} ({THEME_INFO.get(self.theme, ('',))[0]})",
+                 f"Schermata: {dict(b['screens']).get(self.screen.get(), self.screen.get())}",
+                 f"{b['name_label']} {self.name.get()}",
+                 f"Grafico: {dict(GRAPHS).get(self.graph.get(), self.graph.get())}",
+                 f"Allarme: CPU {self.al_cpu.get()}%, GPU {self.al_gpu.get()}%, temperatura {self.al_temp.get()} C, cicalino {'si' if self.al_beep.get() else 'no'}",
+                 f"Spegnimento schermo: {self.off_var.get()} s",
+                 f"Maschera: C,{self.mask()}",
+                 "TENERE: " + (", ".join(keep) or "-"),
+                 "TOGLIERE: " + (", ".join(drop) or "-")]
+        n = self.notes.get("1.0", "end").strip()
+        if n:
+            lines += ["Note:", n]
         return "\n".join(lines)
 
-    def save_config(self):
-        self.cfg[self.build.get()] = self.build_config()
-        self.cfg["build"] = self.build.get()
-        self.cfg["port"] = self.port.get().strip()
-        with open(CONFIG_JSON, "w", encoding="utf-8") as f:
-            json.dump(self.cfg, f, indent=2, ensure_ascii=False)
-        with open(CONFIG_TXT, "w", encoding="utf-8") as f:
-            f.write(self.summary() + "\n")
-        self.logmsg(f"Salvata in {CONFIG_JSON} e {CONFIG_TXT}")
-
-    def copy_for_claude(self):
-        self.save_config()
+    def copy_summary(self):
         self.root.clipboard_clear()
         self.root.clipboard_append(self.summary())
-        self.logmsg("Riepilogo copiato negli appunti: incollalo nella chat con Claude.")
+        self.logmsg("Riepilogo copiato negli appunti.")
+
+    # ================= avanzate =================
+    def factory_reset(self):
+        if messagebox.askyesno(APP_NAME, "Cancellare tutte le impostazioni salvate nel dispositivo e riportarlo ai valori di fabbrica?\n"
+                                         "Il Pico si riavvia."):
+            self.send("K,reset")
+
+    def update_firmware(self):
+        pio = os.path.expanduser(r"~\.platformio\penv\Scripts\pio.exe")
+        if not os.path.exists(pio):
+            pio = "pio"
+        if not messagebox.askyesno(APP_NAME, "Compilare e caricare il firmware sul Pico?\n"
+                                             "Questa finestra si chiude durante il caricamento e si riapre da sola."):
+            return
+        env = self.fw_env.get()
+        self.logmsg(f"Avvio: pio run -e {env} -t upload (puo' richiedere un minuto)")
+
+        def run():
+            try:
+                p = subprocess.Popen([pio, "run", "-e", env, "-t", "upload"], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                     text=True, creationflags=NO_WINDOW)
+                for line in p.stdout:
+                    self.root.after(0, lambda l=line.rstrip(): self.logmsg(l))
+            except Exception as e:
+                self.root.after(0, lambda: self.logmsg(f"Errore: {e}"))
+
+        threading.Thread(target=run, daemon=True).start()
+
+    # ================= preferenze / chiusura / collaudo =================
+    def load_prefs(self):
+        try:
+            with open(SETTINGS, encoding="utf-8") as f:
+                p = json.load(f)
+            return p if isinstance(p, dict) else {}
+        except Exception:
+            return {}
+
+    def save_prefs(self):
+        p = {"geometry": self.root.geometry(), "preview": self.preview_on.get(), "scale": self.scale.get(),
+             "notes": self.notes.get("1.0", "end").strip()}
+        try:
+            with open(SETTINGS, "w", encoding="utf-8") as f:
+                json.dump(p, f, indent=2, ensure_ascii=False)
+        except OSError:
+            pass
 
     def close(self):
         self.running = False
-        self.save_config()
-        self.disconnect()
-        if self.stopped_stats:  # ripristina lo script che avevo fermato
-            start_pc_stats()
+        self.save_prefs()
+        self.drop()
+        if self.stopped_stats:
+            start_pc_stats()  # ripristina lo script che avevo fermato
         self.root.destroy()
+
+    def take_shots(self):
+        """Collaudo: salva uno screenshot di ogni scheda e chiude."""
+        from PIL import ImageGrab
+        os.makedirs(self.shots_dir, exist_ok=True)
+        for i, (tab, name) in enumerate(((self.tab_theme, "tema"), (self.tab_el, "elementi"), (self.tab_data, "dati"),
+                                         (self.tab_alarm, "allarmi"), (self.tab_prof, "profili"), (self.tab_adv, "avanzate"))):
+            self.nb.select(tab)
+            self.root.update()
+            time.sleep(1.0)
+            self.root.update()
+            x, y, w, h = self.root.winfo_rootx(), self.root.winfo_rooty(), self.root.winfo_width(), self.root.winfo_height()
+            ImageGrab.grab(bbox=(x, y, x + w, y + h)).save(os.path.join(self.shots_dir, f"gui_{i}_{name}.png"))
+        self.close()
+
+
+def main():
+    shots = None
+    if "--shots" in sys.argv:
+        shots = sys.argv[sys.argv.index("--shots") + 1]
+    root = tk.Tk()
+    App(root, shots)
+    root.mainloop()
 
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    App(root)
-    root.mainloop()
+    main()

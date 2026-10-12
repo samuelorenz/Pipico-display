@@ -18,6 +18,7 @@
 //   (dopo ogni salvataggio nella flash il Pico scrive "SAVED")
 //   A,<cpu>,<gpu>,<temp>,<cicalino>   soglie di allarme in % / gradi (0 = disattivata) e cicalino 0|1
 //   T,<tema>|next     cambia tema (fallout | skynet | cyberpunk | alien)
+//   SPI,<MHz>         velocita' del bus SPI verso il display (predefinita 40; salvata nella flash)
 //   B,<secondi>       spegne la retroilluminazione dopo N secondi senza dati (0 = mai)
 //   K,reset           cancella le impostazioni salvate e riavvia
 //   G,<metrica>       grafico: cpu | ram | dsk | gpu | tmp | net | auto
@@ -26,6 +27,7 @@
 // Pulsanti opzionali verso GND (con pull-up interno): GP14 = tema successivo, GP15 = schermata successiva.
 // Cicalino piezo opzionale su GP13 (pin fisico 17) verso GND: suona durante gli allarmi.
 #include <EEPROM.h>
+#include "hardware/clocks.h"
 #include "common/shared.h"
 #include "common/theme.h"
 #include "common/stats.h"
@@ -63,18 +65,20 @@ struct Saved {
   uint8_t theme, gMetric, gAuto, pad;
   uint16_t offSec, pad2;
   uint8_t aCpu, aGpu, aTemp, aBeep;  // soglie di allarme
+  uint8_t spiMHz, pad3[3];           // velocita' SPI verso il display
   ThemeState st[4];
 };
-const uint32_t MAGIC = 0x50494333;  // "PIC3": cambia quando cambia il formato salvato (le vecchie impostazioni si ignorano)
+const uint32_t MAGIC = 0x50494334;  // "PIC3": cambia quando cambia il formato salvato (le vecchie impostazioni si ignorano)
 Saved cur;                  // ultimo stato noto (quello salvato o da salvare)
 bool savePending = false;
 unsigned long saveAt = 0;
 uint16_t offSec = 300;      // spegnimento retroilluminazione (0 = mai)
+uint8_t spiMHz = 40;        // velocita' SPI richiesta; il clock reale e' il piu' alto divisore intero che non la supera
 
 int active = 0;
 unsigned long lastActivity = 0, lastCheck = 0;
 unsigned fpsNow = 0, fpsCount = 0;  // fotogrammi al secondo (comando FPS)
-unsigned long fpsAt = 0;
+unsigned long fpsAt = 0, tickUs = 0;
 bool backlightOn = true;
 
 static void snapshot(Saved &s) {
@@ -90,6 +94,7 @@ static void snapshot(Saved &s) {
   s.gMetric = (uint8_t)graphMetric;
   s.gAuto = graphAuto ? 1 : 0;
   s.offSec = offSec;
+  s.spiMHz = spiMHz;
   s.aCpu = alarmCpu; s.aGpu = alarmGpu; s.aTemp = alarmTemp; s.aBeep = alarmBeep ? 1 : 0;
 }
 
@@ -124,6 +129,7 @@ static void loadSettings() {
   graphMetric = min<int>(s.gMetric, MT_COUNT - 1);
   graphAuto = s.gAuto;
   offSec = s.offSec;
+  if (s.spiMHz >= 8 && s.spiMHz <= 100) spiMHz = s.spiMHz;
   alarmCpu = s.aCpu; alarmGpu = s.aGpu; alarmTemp = s.aTemp; alarmBeep = s.aBeep;
   for (int i = 0; i < NTHEMES; i++) if (slotOf(THEMES[i]) == s.theme) active = i;
 }
@@ -161,7 +167,7 @@ static void handleLine(const String &s) {
   if (t == "?") { Serial.println(String("ID,") + THEMES[active]->id); return; }
   if (t == "D") { printState(THEMES[active]); return; }
   if (t == "DALL") { for (int i = 0; i < NTHEMES; i++) printState(THEMES[i]); return; }
-  if (t == "FPS") { Serial.println(String("FPS,") + fpsNow); return; }
+  if (t == "FPS") { Serial.println(String("FPS,") + fpsNow + ",spi=" + spiMHz + ",tick_us=" + tickUs + ",blit_us=" + blitUs); return; }
   if (t == "V") { Serial.println(String("VER,") + FW_VERSION + "," + __DATE__); return; }
   if (t == "L") {
     String l = "LIST";
@@ -217,6 +223,13 @@ static void handleLine(const String &s) {
     checkDirty();
     return;
   }
+  if (t.startsWith("SPI,")) {  // SPI,<MHz>: velocita' del bus verso il display (8-100)
+    spiMHz = (uint8_t)constrain(t.substring(4).toInt(), 8, 100);
+    tft.setSPISpeed((uint32_t)spiMHz * 1000000UL);
+    Serial.println("OK " + t);
+    checkDirty();
+    return;
+  }
   if (t.startsWith("B,")) {
     offSec = (uint16_t)constrain(t.substring(2).toInt(), 0, 65000);
     Serial.println("OK " + t);
@@ -248,12 +261,16 @@ void setup() {
   pinMode(BUZZER, OUTPUT);
   digitalWrite(BUZZER, LOW);
 
+  // Di serie il clock delle periferiche (SPI, UART) arriva dalla PLL USB a 48 MHz e limita l'SPI a 24 MHz.
+  // Lo riporto al clock di sistema (200 MHz): l'SPI puo' arrivare fino a 100 MHz.
+  clock_configure(clk_peri, 0, CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLK_SYS, F_CPU, F_CPU);
+
   tft.init(240, 240, SPI_MODE3);  // se il tuo schermo e' 240x240; per 240x320 cambia in init(240, 320)
-  tft.setSPISpeed(40000000);      // default Adafruit = 8 MHz; il ST7789 regge 40-62 MHz
   tft.setRotation(0);
   tft.fillScreen(ST77XX_BLACK);
 
   loadSettings();
+  tft.setSPISpeed((uint32_t)spiMHz * 1000000UL);  // default Adafruit = 8 MHz
   activate(active);
   lastActivity = millis();
 }
@@ -291,7 +308,9 @@ void loop() {
   flushSave();
 
   if (backlightOn) {
+    unsigned long t0 = micros();
     THEMES[active]->tick();
+    tickUs = micros() - t0;
     fpsCount++;
     if (millis() - fpsAt >= 1000) { fpsNow = fpsCount; fpsCount = 0; fpsAt = millis(); }
   } else {

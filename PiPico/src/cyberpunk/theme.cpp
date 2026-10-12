@@ -156,12 +156,13 @@ static void applyGlitch(int bands) {  // sposta di lato alcune fasce orizzontali
 
 // Disegna una maschera alpha a 8 bit nel colore (r,g,b) con luminosita' k
 static void blitMask(int x0, int y0, int w, int h, const uint8_t *a, uint8_t r, uint8_t g, uint8_t b, float k) {
+  uint16_t lut[256];  // un colore per ogni livello di trasparenza: niente virgola mobile per pixel
+  for (int v = 0; v < 256; v++) { float f = v / 255.0f * k; lut[v] = tft.color565(r * f, g * f, b * f); }
   for (int y = 0; y < h; y++)
     for (int x = 0; x < w; x++) {
       uint8_t v = a[y * w + x];
       if (v < 8) continue;
-      float f = v / 255.0f * k;
-      cv.drawPixel(x0 + x, y0 + y, tft.color565(r * f, g * f, b * f));
+      cv.drawPixel(x0 + x, y0 + y, lut[v]);
     }
 }
 
@@ -174,15 +175,15 @@ static void chromaMask(int x0, int y0, int w, int h, const uint8_t *a, float k) 
 // ---------- Boot (ottiche Kiroshi) ----------
 static void drawBoot() {
   char b[40];
-  if (bootHold > 25 && on(E_LOGO)) {  // dopo le righe: stemma e scritta Arasaka
-    float k = min(1.0f, (bootHold - 25) / 20.0f);
+  if (bootHold > 20 && on(E_LOGO)) {  // dopo le righe: stemma e scritta Arasaka
+    float k = min(1.0f, (bootHold - 20) / 15.0f);
     chromaMask((240 - ARASAKA_EMBLEM_W) / 2, 34, ARASAKA_EMBLEM_W, ARASAKA_EMBLEM_H, ARASAKA_EMBLEM, k);
-    if (bootHold > 40) chromaMask((240 - ARASAKA_LOGO_W) / 2, 150, ARASAKA_LOGO_W, ARASAKA_LOGO_H, ARASAKA_LOGO, k);
-    if (bootHold > 60) {
-      budget = (bootHold - 60) * 2;
+    if (bootHold > 30) chromaMask((240 - ARASAKA_LOGO_W) / 2, 150, ARASAKA_LOGO_W, ARASAKA_LOGO_H, ARASAKA_LOGO, k);
+    if (bootHold > 45) {
+      budget = (bootHold - 45) * 3;
       tprint(66, 196, "NIGHT CITY // 2077");
     }
-    if (++bootHold > 170) { booting = false; resetType(); }
+    if (++bootHold > 100) { booting = false; resetType(); }
     return;
   }
   const char *lines[] = {
@@ -204,7 +205,7 @@ static void drawBoot() {
   if (budget > 0) {  // tutto scritto: titolo con glitch, poi la schermata vera
     bootHold++;
     if (bootHold > 25) chroma(36, 170, "NIGHT CITY", 2);
-    if (bootHold > 110) { booting = false; resetType(); }
+    if (bootHold > 70) { booting = false; resetType(); }
   }
 }
 
@@ -313,7 +314,7 @@ static void drawHud() {
       tprint(sx + 6, sy + 40, "THREAT:", 1, DYEL);
       tprint(sx + 6, sy + 51, lvl, 1, alarm && blink ? RED : YEL);
       if (live && extraLive() && pcx.proc[0]) {  // processo che usa piu' CPU
-        snprintf(b, sizeof(b), "> %s", pcx.proc);
+        snprintf(b, sizeof(b), "> %.13s", pcx.proc);  // il riquadro e' largo 101 px
         tprint(sx + 6, sy + 64, b, 1, CYN);
       }
     }
@@ -563,7 +564,7 @@ void renderFrame() {
   if (want != shown) { shown = want; resetType(); }
 
   budget = on(E_TYPEON) ? revealed : (1 << 30);
-  if (revealed < 1000000) revealed += booting ? 6 : 16;
+  if (revealed < 1000000) revealed += booting ? 10 : 16;
 
   cv.fillScreen(BGC);
   if (booting) drawBoot();
@@ -664,7 +665,9 @@ static void thSetState(const ThemeState &s) {
   screenSel = (Screen)min<int>(s.screen, SCR_GRAPH);
   if (s.name[0]) runnerName = s.name;
 }
-static void thNext() { screenSel = (Screen)((screenSel + 1) % 5); }  // AUTO, HUD, BREACH, TERM, GRAPH
+static void thNext() {
+  if (booting) { booting = false; resetType(); return; }  // il pulsante salta il boot
+  screenSel = (Screen)((screenSel + 1) % 5); }  // AUTO, HUD, BREACH, TERM, GRAPH
 static void thReboot() { startBoot(); }
 }  // namespace
 

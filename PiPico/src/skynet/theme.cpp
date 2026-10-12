@@ -114,13 +114,14 @@ static void applyScanlines() {  // righe dispari al 75% di luminosita'
 static void drawLogo(float k, bool glitch) {
   cv.fillScreen(ST77XX_BLACK);
   int x0 = (240 - SKYNET_LOGO_W) / 2, y0 = (240 - SKYNET_LOGO_H) / 2;
+  uint16_t lut[256];  // un colore per ogni livello di trasparenza: niente virgola mobile per pixel
+  for (int v = 0; v < 256; v++) { float f = v / 255.0f * k; lut[v] = tft.color565(255 * f, 40 * f, 30 * f); }
   for (int y = 0; y < SKYNET_LOGO_H; y++) {
     int off = (glitch && random(0, 10) == 0) ? random(-12, 13) : 0;
     for (int x = 0; x < SKYNET_LOGO_W; x++) {
       uint8_t a = SKYNET_LOGO[y * SKYNET_LOGO_W + x];
       if (a < 8) continue;
-      float f = a / 255.0f * k;
-      cv.drawPixel(x0 + x + off, y0 + y, tft.color565(255 * f, 40 * f, 30 * f));
+      cv.drawPixel(x0 + x + off, y0 + y, lut[a]);
     }
   }
   blitCanvas(cv);
