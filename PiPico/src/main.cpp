@@ -9,7 +9,8 @@
 // Comandi comuni (gli altri vengono passati al tema attivo):
 //   ?                 risponde "ID,<tema>"
 //   PINS,L | PINS,H   diagnostica: i GPIO liberi a livello basso (pull-up) o alto (pull-down), per trovare dove e' collegato un pulsante
-//   BTNS              polarita' riconosciuta e stato dei quattro pulsanti
+//   BTNS              polarita' riconosciuta, stato e numero di pressioni dei quattro pulsanti
+//   BEEP,<Hz>,<ms>    prova del cicalino (BEEP,0,<ms> = livello alto fisso)
 //   FPS               risponde "FPS,<fotogrammi al secondo>"
 //   V                 risponde "VER,<versione>,<data di compilazione>"
 //   L                 risponde "LIST,<tema>,<tema>,..." (i temi presenti nel firmware)
@@ -70,6 +71,8 @@ static int slotOf(const Theme *t) {
 // ---------- Pulsanti ----------
 struct Btn { uint8_t pin; bool activeHigh; };
 Btn btns[4] = {{BTN_THEME, false}, {BTN_SCREEN, false}, {BTN_GRAPH, false}, {BTN_BL, false}};
+unsigned btnCount[4] = {0, 0, 0, 0};  // quante volte e' stato visto premuto (comando BTNS)
+bool btnPrev[4] = {false, false, false, false};
 static bool pressed(const Btn &b) { return digitalRead(b.pin) == (b.activeHigh ? HIGH : LOW); }
 static void initButtons() {
   for (Btn &b : btns) pinMode(b.pin, INPUT_PULLUP);
@@ -201,10 +204,18 @@ static void handleLine(const String &s) {
     Serial.println(l);
     return;
   }
+  if (t.startsWith("BEEP,")) {  // BEEP,<Hz>,<ms>: prova del cicalino con un tono; BEEP,0,<ms>: livello alto fisso (per cicalini attivi)
+    int c1 = t.indexOf(',', 5);
+    int hz = t.substring(5, c1 < 0 ? t.length() : c1).toInt(), ms = c1 < 0 ? 500 : t.substring(c1 + 1).toInt();
+    if (hz > 0) tone(BUZZER, hz, ms);
+    else { digitalWrite(BUZZER, HIGH); delay(constrain(ms, 1, 2000)); digitalWrite(BUZZER, LOW); }
+    Serial.println("OK " + t);
+    return;
+  }
   if (t == "BTNS") {  // polarita' riconosciuta e stato di ogni pulsante: BTNS,GP14=L:0,... (L = verso GND, H = verso 3V3; 1 = premuto)
     const char *names[4] = {"tema", "schermata", "grafico", "schermo"};
     String l = "BTNS";
-    for (int i = 0; i < 4; i++) l += String(",") + names[i] + "=GP" + btns[i].pin + (btns[i].activeHigh ? ":H:" : ":L:") + (pressed(btns[i]) ? 1 : 0);
+    for (int i = 0; i < 4; i++) l += String(",") + names[i] + "=GP" + btns[i].pin + (btns[i].activeHigh ? ":H:" : ":L:") + (pressed(btns[i]) ? 1 : 0) + ":n" + btnCount[i];
     Serial.println(l);
     return;
   }
@@ -327,7 +338,14 @@ void loop() {
     }
   }
 
-  // pulsanti (attivi bassi), con 250 ms di antirimbalzo
+  // conta le pressioni di ogni pulsante (diagnostica, comando BTNS)
+  for (int i = 0; i < 4; i++) {
+    bool p = pressed(btns[i]);
+    if (p && !btnPrev[i]) btnCount[i]++;
+    btnPrev[i] = p;
+  }
+
+  // pulsanti, con 250 ms di antirimbalzo
   static unsigned long lastBtn = 0;
   if (millis() - lastBtn > 250) {
     bool bTheme = pressed(btns[0]), bScreen = pressed(btns[1]);
