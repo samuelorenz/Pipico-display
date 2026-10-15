@@ -24,7 +24,9 @@
 //   G,<metrica>       grafico: cpu | ram | dsk | gpu | tmp | net | auto
 //   S,... X,... P,... dati dal PC (vedi common/stats.h)
 //
-// Pulsanti opzionali verso GND (con pull-up interno): GP14 = tema successivo, GP15 = schermata successiva.
+// Pulsanti opzionali verso GND (con pull-up interno, niente resistenze esterne):
+//   GP14 = tema successivo      GP15 = schermata successiva
+//   GP12 = grafico successivo   GP11 = schermo acceso / spento
 // Cicalino piezo opzionale su GP13 (pin fisico 17) verso GND: suona durante gli allarmi.
 #include <EEPROM.h>
 #include "hardware/clocks.h"
@@ -36,6 +38,8 @@
 
 #define BTN_THEME   14   // pin fisico 19
 #define BTN_SCREEN  15   // pin fisico 20
+#define BTN_GRAPH   12   // pin fisico 16
+#define BTN_BL      11   // pin fisico 15
 #define BUZZER      13   // pin fisico 17
 
 // Con -DONLY_<TEMA> (env fallout, skynet, ...) il firmware contiene un solo tema
@@ -80,6 +84,8 @@ unsigned long lastActivity = 0, lastCheck = 0;
 unsigned fpsNow = 0, fpsCount = 0;  // fotogrammi al secondo (comando FPS)
 unsigned long fpsAt = 0, tickUs = 0;
 bool backlightOn = true;
+bool manualOff = false;
+bool shownGraph = false;  // il pulsante grafico: il primo tocco apre la schermata, i successivi cambiano statistica  // schermo spento con il pulsante: i dati dal PC non lo riaccendono
 
 static void snapshot(Saved &s) {
   s = cur;  // mantiene gli slot dei temi non compilati
@@ -144,7 +150,7 @@ static void activate(int i) {
 
 static void wake() {
   lastActivity = millis();
-  if (!backlightOn) { backlightOn = true; digitalWrite(TFT_BL, HIGH); }
+  if (!backlightOn && !manualOff) { backlightOn = true; digitalWrite(TFT_BL, HIGH); }
 }
 
 // Una riga STATE per il tema dato (stesso formato per D e DALL)
@@ -258,6 +264,8 @@ void setup() {
   digitalWrite(TFT_BL, HIGH);
   pinMode(BTN_THEME, INPUT_PULLUP);
   pinMode(BTN_SCREEN, INPUT_PULLUP);
+  pinMode(BTN_GRAPH, INPUT_PULLUP);
+  pinMode(BTN_BL, INPUT_PULLUP);
   pinMode(BUZZER, OUTPUT);
   digitalWrite(BUZZER, LOW);
 
@@ -290,8 +298,28 @@ void loop() {
   // pulsanti (attivi bassi), con 250 ms di antirimbalzo
   static unsigned long lastBtn = 0;
   if (millis() - lastBtn > 250) {
-    if (digitalRead(BTN_THEME) == LOW)       { lastBtn = millis(); wake(); if (NTHEMES > 1) activate(active + 1); }
-    else if (digitalRead(BTN_SCREEN) == LOW) { lastBtn = millis(); wake(); THEMES[active]->nextScreen(); checkDirty(); }
+    bool bTheme = digitalRead(BTN_THEME) == LOW, bScreen = digitalRead(BTN_SCREEN) == LOW;
+    bool bGraph = digitalRead(BTN_GRAPH) == LOW, bBl = digitalRead(BTN_BL) == LOW;
+    if (bTheme || bScreen || bGraph || bBl) {
+      lastBtn = millis();
+      if (bBl) {  // schermo acceso <-> spento
+        if (backlightOn) { backlightOn = false; manualOff = true; digitalWrite(TFT_BL, LOW); }
+        else { manualOff = false; wake(); }
+      } else {
+        manualOff = false;  // qualsiasi altro pulsante riaccende lo schermo
+        wake();
+        if (bTheme) { if (NTHEMES > 1) activate(active + 1); }
+        else if (bScreen) { THEMES[active]->nextScreen(); }
+        else {  // grafico successivo: passa alla schermata Grafico e cambia statistica
+          graphAuto = false;
+          if (shownGraph) graphMetric = (graphMetric + 1) % MT_COUNT;
+          THEMES[active]->handle("M,graph");
+          shownGraph = true;
+        }
+        if (!bGraph) shownGraph = false;
+        checkDirty();
+      }
+    }
   }
 
   // retroilluminazione: si spegne se non arriva nulla per offSec secondi

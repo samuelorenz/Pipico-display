@@ -18,7 +18,7 @@ Tutti i temi hanno una modalità di test da **seriale** (grafico dei numeri rice
 - Raspberry Pi Pico (RP2040)
 - Display TFT ST7789 240x240 (SPI)
 - Cavo USB
-- Facoltativi: due pulsanti, un cicalino piezo e la [custodia stampata in 3D](#custodia-3d)
+- Facoltativi: quattro pulsanti, un cicalino piezo e la [custodia stampata in 3D](#custodia-3d)
 
 ### Collegamenti
 
@@ -38,8 +38,10 @@ I numeri sono GPIO, non pin fisici. Il display usa SPI0 in `SPI_MODE3`.
 
 | Componente | Pico GPIO | Pin fisico | Collegamento |
 |------------|-----------|------------|--------------|
-| Pulsante "tema successivo" | GP14 | 19 | verso GND (pull-up interno) |
-| Pulsante "schermata successiva" | GP15 | 20 | verso GND (pull-up interno) |
+| Pulsante 1 "tema successivo" | GP14 | 19 | verso GND |
+| Pulsante 2 "schermata successiva" | GP15 | 20 | verso GND |
+| Pulsante 3 "grafico successivo" | GP12 | 16 | verso GND |
+| Pulsante 4 "schermo acceso / spento" | GP11 | 15 | verso GND |
 | Cicalino piezo (allarmi) | GP13 | 17 | verso GND |
 
 Se il tuo schermo è 240x320, cambia `tft.init(240, 240, ...)` in `tft.init(240, 320, ...)` in [src/main.cpp](src/main.cpp) (la grafica è disegnata per 240x240).
@@ -80,9 +82,11 @@ L'upload usa [upload.ps1](upload.ps1):
 | comando `T,fallout` / `T,skynet` / `T,cyberpunk` / `T,alien` / `T,next` | cambia tema (il boot del nuovo tema parte subito) |
 | menu *Build* della [GUI](#gui-di-debug) | come sopra |
 | pulsante su **GP14** (pin fisico 19) verso GND | tema successivo |
-| pulsante su **GP15** (pin fisico 20) verso GND | schermata successiva del tema attivo |
+| pulsante su **GP15** (pin fisico 20) verso GND | schermata successiva del tema attivo (durante il boot lo salta) |
+| pulsante su **GP12** (pin fisico 16) verso GND | apre la schermata Grafico; ogni pressione successiva passa alla statistica seguente (CPU, RAM, disco, GPU, temperatura, rete, ping) |
+| pulsante su **GP11** (pin fisico 15) verso GND | spegne o riaccende lo schermo; da spento i dati dal PC non lo riaccendono, serve di nuovo il pulsante (o un altro pulsante) |
 
-I pulsanti sono facoltativi: i pin usano la resistenza di pull-up interna e non fanno nulla se non sono collegati. Cambiare tema non cancella lo stato degli altri: ognuno mantiene i propri elementi, la propria schermata e il proprio nome.
+I pulsanti sono facoltativi: ognuno va tra il pin GPIO e GND, **senza resistenze esterne** (il firmware attiva i pull-up interni del Pico, circa 50 kΩ) e non fanno nulla se non sono collegati. Eventuali pull-up esterni sono innocui se vanno a 3V3, **mai a 5 V**. Cambiare tema non cancella lo stato degli altri: ognuno mantiene i propri elementi, la propria schermata e il proprio nome.
 
 ### Impostazioni salvate nella flash
 
@@ -91,7 +95,16 @@ Il Pico salva da solo, 3 secondi dopo l'ultimo cambiamento, **il tema attivo, gl
 | Comando | Effetto |
 |---------|---------|
 | `D` | il Pico risponde `STATE,<tema>,<elementi>,<schermata>,<spegnimento>,<metrica>,<auto>,<nome>` con lo stato attuale (la [GUI](#gui-di-debug) lo usa per impostare le caselle) |
+| `DALL` | come `D` ma una riga per ogni tema, anche quelli non attivi (per esportare un profilo) |
+| `W,<tema>,<elementi>,<schermata>,<nome>` | scrive lo stato di un tema senza attivarlo (per importare un profilo) |
+| `V` | risponde `VER,<versione>,<data di compilazione>` |
+| `L` | risponde `LIST,<tema>,...`: i temi presenti nel firmware |
+| `SNAP` | invia l'ultimo fotogramma disegnato: la riga `SNAP,240,240,2` e poi 115.200 byte RGB565 (little endian). Serve all'anteprima della GUI e a `tools/snap.py` |
+| `FPS` | risponde `FPS,<fotogrammi/s>,spi=<MHz>,tick_us=...,blit_us=...` |
+| `SPI,<MHz>` | velocità del bus verso il display (8-100, predefinita 40); salvata nella flash |
 | `K,reset` | cancella le impostazioni salvate e riavvia: tutto torna ai valori di fabbrica |
+
+Dopo ogni scrittura nella flash il Pico risponde `SAVED`: la GUI lo usa per mostrare "✓ Salvato nel dispositivo".
 
 ### Spegnimento dello schermo
 
@@ -253,27 +266,43 @@ La sequenza di avvio dei terminali di *Fallout 4*, scritta lettera per lettera: 
 
 Esempio: `C,131071` accende tutto (predefinito), `C,66559` toglie tutti gli effetti CRT e le statistiche grandi ma tiene il logo.
 
-## GUI di debug
+## GUI di configurazione (PiPico Display Config)
 
-[tools/display_gui.py](tools/display_gui.py) è una finestra sul PC per provare dal vivo cosa mostrare sul display, per tutti i temi:
+[tools/display_gui.py](tools/display_gui.py) è il programma per configurare il display, come i configuratori delle tastiere: **si imposta una volta, il dispositivo si ricorda tutto** (tema, schermata, elementi, nome, grafico, allarmi, spegnimento, velocità SPI) e al riavvio riparte sempre così, anche senza GUI e senza PC.
+
+**Installazione come programma:**
 
 ```bash
-python tools/display_gui.py
+pip install -r tools/requirements.txt
+powershell -ExecutionPolicy Bypass -File tools\install_app.ps1           # collegamenti nel menu Start e sul Desktop
+powershell -ExecutionPolicy Bypass -File tools\install_app.ps1 -Remove   # li toglie
 ```
 
-- **Sincronizzata con il Pico:** quando si collega legge lo stato salvato sul Pico (comandi `?` e `D`) e imposta da sola tema, caselle, schermata, nome, grafico e tempo di spegnimento. Quello che vedi nella GUI è quello che c'è sul display.
-- **Build:** il menu cambia tema sul Pico (`T,<tema>`); le caselle si aggiornano quando il Pico risponde.
-- **Schermata:** quelle del tema (RobCo: automatica, monitor, hacking, terminale, grafico; Skynet: HUD, terminale, grafico; Cyberpunk: automatica, monitor, Breach Protocol, terminale, grafico; Alien: automatica, stato della nave, motion tracker, terminale, grafico), più i pulsanti *Rivedi il boot* e *Pulisci terminale*.
-- **Grafico:** menu con la statistica da mostrare (o la rotazione automatica). Scegliendola, il display passa alla schermata Grafico.
-- **Elementi:** una casella per ogni contenuto, statistica ed effetto. Ogni modifica arriva subito al display. Ci sono anche i pulsanti *Tutto acceso* e *Tutto spento*.
-- **Allarme:** soglie di CPU, GPU e temperatura GPU e casella del cicalino (comando `A,...`).
-- **Dati:** nome (amministratore per RobCo, bersaglio per Skynet, netrunner per Cyberpunk, ufficiale per Alien), **tempo di spegnimento dello schermo**, invio delle statistiche del PC (sostituisce `pc_stats.py`; mostra anche temperatura CPU, batteria e processo più pesante) e una riga libera da inviare al Pico.
-- **Note per Claude:** spazio per scrivere cosa ti piace e cosa cambiare.
-- **Salva configurazione:** scrive `tools/display_config.json` (una sezione per tema) e `tools/display_config.txt`.
-- **Copia per Claude:** copia negli appunti un riepilogo (tema, schermata, grafico, maschera, elementi da TENERE e da TOGLIERE, note) da incollare in chat, così i valori scelti possono diventare quelli predefiniti del firmware.
-- **Risposte del Pico:** mostra le conferme `OK ...` ricevute.
+Oppure da terminale: `python tools/display_gui.py`. Richiede Python con Tkinter (incluso nell'installer di Python per Windows; il Python interno di PlatformIO non lo ha). La finestra si ricollega da sola se scolleghi e ricolleghi il Pico.
 
-Le scelte fatte nella GUI vengono salvate **dal Pico** nella flash: non serve rimandarle. La GUI usa la porta seriale come `pc_stats.py`: all'apertura ferma lo script e lo rilancia alla chiusura; `upload.ps1` ferma e rilancia entrambi. Durante l'intro Skynet (circa 8 secondi) il Pico non legge la seriale: i comandi arrivano subito dopo. Richiede Python con Tkinter (incluso nell'installer di Python per Windows; il Python interno di PlatformIO non lo ha).
+| Parte | Cosa fa |
+|-------|---------|
+| **Barra in alto** | stato del collegamento (verde / grigio / rosso) e indicatore di salvataggio: *Salvataggio nel dispositivo...* quando cambi qualcosa, poi *✓ Salvato nel dispositivo* quando il Pico conferma (`SAVED`) |
+| **Anteprima del display** | a sinistra, **dal vivo**: la GUI chiede al Pico l'ultimo fotogramma (`SNAP`, circa 3 volte al secondo) e lo disegna, a 1x o 2x. *Salva immagine...* lo esporta |
+| **Tema** | i temi presenti nel firmware (`L`) con descrizione; scegliendone uno il display cambia subito. Schermata del tema, nome, *Rivedi il boot*, *Pulisci terminale* |
+| **Elementi** | una casella per ogni contenuto, statistica ed effetto del tema attivo, aggiornata in tempo reale; *Tutto acceso / spento* |
+| **Dati e grafici** | invio delle statistiche con valori correnti, scelta del grafico (passa alla schermata Grafico), interruttore per avviare `pc_stats.py` con Windows |
+| **Allarmi e schermo** | soglie CPU, GPU e temperatura GPU, cicalino, *Prova l'allarme*, tempo di spegnimento dello schermo |
+| **Profili** | *Esporta profilo...* / *Importa e applica...* (tutta la configurazione di tutti i temi in un file `.json`), preset (*Tutto acceso*, *Senza effetti CRT*, *Solo statistiche*, *Tutto spento*), note e *Copia il riepilogo* negli appunti |
+| **Avanzate** | versione del firmware e dispositivo, **velocità SPI**, misura dei fotogrammi/s, *Compila e carica sul Pico* (chiude e riapre la finestra durante l'upload), *Valori di fabbrica*, console con i messaggi del Pico e riga libera |
+
+La GUI legge lo stato salvato sul Pico quando si collega (`?`, `V`, `L`, `D`), quindi caselle e menu mostrano sempre ciò che c'è davvero sul dispositivo. Se il firmware è più vecchio di 1.3.0 la GUI avvisa e propone l'aggiornamento. Usa la porta seriale come `pc_stats.py`: all'apertura ferma lo script e lo rilancia alla chiusura; `upload.ps1` ferma e rilancia entrambi. Durante l'intro Skynet (circa 8 secondi) il Pico non legge la seriale: i comandi arrivano subito dopo.
+
+Le definizioni dei temi (elementi con il loro bit, schermate, grafici, descrizioni) stanno in [tools/gui_defs.py](tools/gui_defs.py): vanno tenute allineate con il `theme.cpp` di ogni tema.
+
+### Anteprima da riga di comando
+
+[tools/snap.py](tools/snap.py) salva il fotogramma corrente come PNG, anche dopo aver mandato dei comandi (la porta seriale può essere usata da un solo programma: chiudi prima la GUI):
+
+```bash
+python tools/snap.py schermata.png
+python tools/snap.py alien.png --cmd "T,alien" --cmd "M,tracker" --wait 3
+```
 
 ## Build `skynet`: visione del T-800 / terminale Skynet
 
@@ -423,9 +452,15 @@ Esempio: `C,65535` accende tutto (predefinito).
 
 ## Prestazioni
 
-- Per impostazione predefinita la libreria Adafruit usa SPI a **8 MHz** e un `fillScreen` completo costa circa 115 ms, per cui il display sembra lento. I firmware impostano `tft.setSPISpeed(40000000)` (40 MHz). Se vedi pixel sporchi o schermo instabile abbassa a 32 MHz; con cavi corti puoi provare fino a 62.5 MHz.
-- Le animazioni sono disegnate **fuori schermo** su un `GFXcanvas16` 240x240 (circa 115 KB di RAM) e inviate al display in un unico blocco con `drawRGBBitmap`: niente sfarfallio e circa 30-40 fps.
+- **Frame rate:** circa **27 fotogrammi al secondo** con le impostazioni predefinite (prima delle ottimizzazioni erano 7-16). Si ottiene così:
+  - CPU a **200 MHz** (`board_build.f_cpu` in `platformio.ini`, di serie 133).
+  - Il clock delle periferiche (`clk_peri`) viene riportato al clock di sistema all'avvio: di serie arriva dalla PLL USB a 48 MHz e limita l'SPI a 24 MHz, **qualunque velocità si richieda**.
+  - Le animazioni sono disegnate **fuori schermo** su un `GFXcanvas16` 240x240 (circa 115 KB di RAM) e inviate con `blitCanvas()` ([src/common/shared.cpp](src/common/shared.cpp)): un solo trasferimento SPI a blocchi con `spi_write_blocking`, dopo aver scambiato i byte di ogni pixel con l'istruzione `REV16` (`drawRGBBitmap` della libreria manda i pixel uno alla volta ed è molto più lento).
+  - I colori dei loghi in dissolvenza sono precalcolati (256 valori per fotogramma) invece di usare la virgola mobile su ogni pixel.
+- **Velocità SPI** (`SPI,<MHz>` o scheda Avanzate): il valore richiesto viene arrotondato per difetto a 200 MHz / divisore pari. Misure con il canvas intero: 25 MHz → 39 ms per fotogramma; **40 (33 MHz reali, predefinito) → 30 ms**; 50 MHz → 21 ms (circa 34 fps). Il predefinito è quello sicuro: 50 MHz è più fluido ma con fili lunghi o scollegati può dare pixel sporchi, e in quel caso si torna a 40.
+- Il tempo per fotogramma si legge con `FPS` (`tick_us` = disegno + invio, `blit_us` = solo invio).
 - Uso di memoria: firmware `all` circa 210 KB di flash su 2 MB (10%) e circa 22 KB di RAM statica, più il canvas condiviso da 115 KB allocato all'avvio. Un solo tema: circa 100 KB (`cyberpunk`, `alien`, `fallout`) o 125 KB (`skynet`).
+- I boot sono stati accorciati (circa 7-9 secondi) e si saltano premendo il pulsante "schermata successiva".
 - Le impostazioni salvate occupano un settore della flash (emulazione EEPROM, 256 byte usati). La scrittura blocca il Pico per qualche decina di millisecondi, per questo avviene solo 3 secondi dopo un cambiamento e non a ogni fotogramma.
 
 ## Loghi
@@ -476,8 +511,12 @@ src/alien/logo.h           logo Weyland-Yutani (generato)
 case/pipico_case.scad      custodia 3D parametrica (OpenSCAD)
 tools/pc_stats.py          invia le statistiche del PC al Pico
 tools/autostart.ps1        installa/rimuove l'avvio automatico di pc_stats.py con Windows
-tools/display_gui.py       GUI di debug (elementi, schermate, statistiche)
-tools/display_config.*     configurazione salvata dalla GUI (generata)
+tools/display_gui.py       GUI di configurazione: anteprima, tema, elementi, allarmi, profili
+tools/gui_defs.py          definizioni dei temi per la GUI (elementi, schermate, grafici)
+tools/snap.py              anteprima del display da riga di comando (comando SNAP)
+tools/install_app.ps1      collegamenti nel menu Start e sul Desktop
+tools/make_icon.py         genera l'icona app.ico
+tools/display_config.json    preferenze della finestra della GUI (generato)
 tools/make_logo.py         generatore generico di loghi (RobCo, Arasaka, Weyland-Yutani)
 tools/make_skynet_logo.py  generatore del logo Skynet
 tools/requirements.txt     dipendenze Python degli script in tools/

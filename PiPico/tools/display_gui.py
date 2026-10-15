@@ -76,7 +76,7 @@ class App:
         # stato del dispositivo
         self.connected = False
         self.port_name = ""
-        self.theme = None
+        self.theme = ""            # tema attivo sul Pico ("" = non ancora noto)
         self.themes = list(BUILDS)
         self.fw = None
         self.fw_date = ""
@@ -546,7 +546,7 @@ class App:
         self.al_gpu.set(int(ag))
         self.al_temp.set(int(at))
         self.al_beep.set(bool(int(ab)))
-        if tid == self.theme or self.theme is None:
+        if tid == self.theme or not self.theme:
             self.set_theme(tid)
             b = BUILDS[tid]
             for bit, key, _, _ in b["elements"]:
@@ -580,11 +580,13 @@ class App:
 
     # ================= comandi =================
     def mask(self):
-        b = BUILDS[self.theme]
+        b = BUILDS.get(self.theme)
+        if not b:
+            return 0
         return sum(1 << bit for bit, key, _, _ in b["elements"] if self.el_vars[key].get())
 
     def send_flags(self):
-        if self.theme:
+        if self.theme in BUILDS:
             self.send(f"C,{self.mask()}", cfg=True)
 
     def send_screen(self):
@@ -595,12 +597,12 @@ class App:
 
     def request_theme(self, tid):
         if not self.send(f"T,{tid}", cfg=True):
-            self.theme_var.set(self.theme or "")
+            self.theme_var.set(self.theme)
 
     def pick_graph(self, key):
         self.graph.set(key)
         self.send(f"G,{key}", cfg=True)
-        if self.theme:
+        if self.theme in BUILDS:
             screens = [k for k, _ in BUILDS[self.theme]["screens"]]
             if "graph" in screens:
                 self.screen.set("graph")
@@ -633,9 +635,9 @@ class App:
             self.raw.set("")
 
     def preset(self, mode):
-        if not self.theme:
+        b = BUILDS.get(self.theme)
+        if not b:
             return
-        b = BUILDS[self.theme]
         for bit, key, label, group in b["elements"]:
             if mode == "all":
                 v = True
@@ -696,7 +698,8 @@ class App:
         try:
             from PIL import Image
             from snap import rgb565_to_rgb
-            Image.frombytes("RGB", (w, h), rgb565_to_rgb(data, w, h)).resize((w * 2, h * 2), Image.NEAREST).save(path)
+            nearest = getattr(Image, "Resampling", Image).NEAREST
+            Image.frombytes("RGB", (w, h), rgb565_to_rgb(data, w, h)).resize((w * 2, h * 2), nearest).save(path)
         except ImportError:
             with open(os.path.splitext(path)[0] + ".ppm", "wb") as f:
                 f.write(rgb565_to_ppm(data, w, h))
@@ -771,9 +774,9 @@ class App:
         self.logmsg(f"Profilo applicato: {path}")
 
     def summary(self):
-        if not self.theme:
+        b = BUILDS.get(self.theme)
+        if not b:
             return "Nessun dispositivo collegato."
-        b = BUILDS[self.theme]
         keep = [label for _, key, label, _ in b["elements"] if self.el_vars[key].get()]
         drop = [label for _, key, label, _ in b["elements"] if not self.el_vars[key].get()]
         lines = [f"Configurazione display - tema {self.theme} ({THEME_INFO.get(self.theme, ('',))[0]})",
@@ -851,7 +854,13 @@ class App:
     def take_shots(self):
         """Collaudo: salva uno screenshot di ogni scheda e chiude."""
         from PIL import ImageGrab
-        os.makedirs(self.shots_dir, exist_ok=True)
+        outdir = self.shots_dir or "."
+        os.makedirs(outdir, exist_ok=True)
+        self.root.attributes("-topmost", True)  # sopra le altre finestre, altrimenti lo screenshot cattura quello che la copre
+        self.root.lift()
+        self.root.focus_force()
+        self.root.update()
+        time.sleep(1.5)
         for i, (tab, name) in enumerate(((self.tab_theme, "tema"), (self.tab_el, "elementi"), (self.tab_data, "dati"),
                                          (self.tab_alarm, "allarmi"), (self.tab_prof, "profili"), (self.tab_adv, "avanzate"))):
             self.nb.select(tab)
@@ -859,7 +868,7 @@ class App:
             time.sleep(1.0)
             self.root.update()
             x, y, w, h = self.root.winfo_rootx(), self.root.winfo_rooty(), self.root.winfo_width(), self.root.winfo_height()
-            ImageGrab.grab(bbox=(x, y, x + w, y + h)).save(os.path.join(self.shots_dir, f"gui_{i}_{name}.png"))
+            ImageGrab.grab(bbox=(x, y, x + w, y + h)).save(os.path.join(outdir, f"gui_{i}_{name}.png"))
         self.close()
 
 
