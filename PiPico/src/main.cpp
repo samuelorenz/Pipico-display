@@ -8,6 +8,8 @@
 //
 // Comandi comuni (gli altri vengono passati al tema attivo):
 //   ?                 risponde "ID,<tema>"
+//   PINS,L | PINS,H   diagnostica: i GPIO liberi a livello basso (pull-up) o alto (pull-down), per trovare dove e' collegato un pulsante
+//   BTNS              polarita' riconosciuta e stato dei quattro pulsanti
 //   FPS               risponde "FPS,<fotogrammi al secondo>"
 //   V                 risponde "VER,<versione>,<data di compilazione>"
 //   L                 risponde "LIST,<tema>,<tema>,..." (i temi presenti nel firmware)
@@ -24,7 +26,9 @@
 //   G,<metrica>       grafico: cpu | ram | dsk | gpu | tmp | net | auto
 //   S,... X,... P,... dati dal PC (vedi common/stats.h)
 //
-// Pulsanti opzionali verso GND (con pull-up interno, niente resistenze esterne):
+// Pulsanti opzionali. Di norma tra il GPIO e GND (pull-up interno, niente resistenze esterne), ma il
+// firmware riconosce da solo, all'accensione, anche i pulsanti verso 3V3 con una resistenza di pull-down:
+// un pin che a riposo legge basso nonostante il pull-up interno e' un pulsante "attivo alto".
 //   GP14 = tema successivo      GP15 = schermata successiva
 //   GP12 = grafico successivo   GP11 = schermo acceso / spento
 // Cicalino piezo opzionale su GP13 (pin fisico 17) verso GND: suona durante gli allarmi.
@@ -61,6 +65,19 @@ static int slotOf(const Theme *t) {
   const char *ids[4] = {"fallout", "skynet", "cyberpunk", "alien"};
   for (int i = 0; i < 4; i++) if (!strcmp(t->id, ids[i])) return i;
   return 0;
+}
+
+// ---------- Pulsanti ----------
+struct Btn { uint8_t pin; bool activeHigh; };
+Btn btns[4] = {{BTN_THEME, false}, {BTN_SCREEN, false}, {BTN_GRAPH, false}, {BTN_BL, false}};
+static bool pressed(const Btn &b) { return digitalRead(b.pin) == (b.activeHigh ? HIGH : LOW); }
+static void initButtons() {
+  for (Btn &b : btns) pinMode(b.pin, INPUT_PULLUP);
+  delay(5);  // il pull-up ha bisogno di un attimo
+  for (Btn &b : btns) {
+    b.activeHigh = digitalRead(b.pin) == LOW;  // basso a riposo anche con il pull-up: c'e' un pull-down esterno
+    pinMode(b.pin, b.activeHigh ? INPUT_PULLDOWN : INPUT_PULLUP);
+  }
 }
 
 // ---------- Impostazioni salvate ----------
@@ -173,6 +190,24 @@ static void handleLine(const String &s) {
   if (t == "?") { Serial.println(String("ID,") + THEMES[active]->id); return; }
   if (t == "D") { printState(THEMES[active]); return; }
   if (t == "DALL") { for (int i = 0; i < NTHEMES; i++) printState(THEMES[i]); return; }
+  if (t == "PINS" || t == "PINS,L" || t == "PINS,H") {  // diagnostica per i pulsanti: GPIO liberi a livello basso (L) o alto (H)
+    static const uint8_t cand[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 20, 26, 27, 28};
+    bool high = t == "PINS,H";  // H: pull-down interno, un pulsante verso 3V3 porta il pin alto; L: pull-up, un pulsante verso GND lo porta basso
+    for (uint8_t g : cand) pinMode(g, high ? INPUT_PULLDOWN : INPUT_PULLUP);
+    delay(3);  // i pull-up/pull-down interni hanno bisogno di un attimo per stabilizzarsi
+    String l = high ? "PINS,H" : "PINS,L";
+    for (uint8_t g : cand) if (digitalRead(g) == (high ? HIGH : LOW)) l += String(",GP") + g;
+    for (Btn &b : btns) pinMode(b.pin, b.activeHigh ? INPUT_PULLDOWN : INPUT_PULLUP);  // ripristina i pulsanti
+    Serial.println(l);
+    return;
+  }
+  if (t == "BTNS") {  // polarita' riconosciuta e stato di ogni pulsante: BTNS,GP14=L:0,... (L = verso GND, H = verso 3V3; 1 = premuto)
+    const char *names[4] = {"tema", "schermata", "grafico", "schermo"};
+    String l = "BTNS";
+    for (int i = 0; i < 4; i++) l += String(",") + names[i] + "=GP" + btns[i].pin + (btns[i].activeHigh ? ":H:" : ":L:") + (pressed(btns[i]) ? 1 : 0);
+    Serial.println(l);
+    return;
+  }
   if (t == "FPS") { Serial.println(String("FPS,") + fpsNow + ",spi=" + spiMHz + ",tick_us=" + tickUs + ",blit_us=" + blitUs); return; }
   if (t == "V") { Serial.println(String("VER,") + FW_VERSION + "," + __DATE__); return; }
   if (t == "L") {
@@ -262,10 +297,7 @@ void setup() {
   SPI.setTX(19);
   pinMode(TFT_BL, OUTPUT);
   digitalWrite(TFT_BL, HIGH);
-  pinMode(BTN_THEME, INPUT_PULLUP);
-  pinMode(BTN_SCREEN, INPUT_PULLUP);
-  pinMode(BTN_GRAPH, INPUT_PULLUP);
-  pinMode(BTN_BL, INPUT_PULLUP);
+  initButtons();
   pinMode(BUZZER, OUTPUT);
   digitalWrite(BUZZER, LOW);
 
@@ -298,8 +330,8 @@ void loop() {
   // pulsanti (attivi bassi), con 250 ms di antirimbalzo
   static unsigned long lastBtn = 0;
   if (millis() - lastBtn > 250) {
-    bool bTheme = digitalRead(BTN_THEME) == LOW, bScreen = digitalRead(BTN_SCREEN) == LOW;
-    bool bGraph = digitalRead(BTN_GRAPH) == LOW, bBl = digitalRead(BTN_BL) == LOW;
+    bool bTheme = pressed(btns[0]), bScreen = pressed(btns[1]);
+    bool bGraph = pressed(btns[2]), bBl = pressed(btns[3]);
     if (bTheme || bScreen || bGraph || bBl) {
       lastBtn = millis();
       if (bBl) {  // schermo acceso <-> spento

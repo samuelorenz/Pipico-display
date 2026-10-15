@@ -86,6 +86,10 @@ L'upload usa [upload.ps1](upload.ps1):
 | pulsante su **GP12** (pin fisico 16) verso GND | apre la schermata Grafico; ogni pressione successiva passa alla statistica seguente (CPU, RAM, disco, GPU, temperatura, rete, ping) |
 | pulsante su **GP11** (pin fisico 15) verso GND | spegne o riaccende lo schermo; da spento i dati dal PC non lo riaccendono, serve di nuovo il pulsante (o un altro pulsante) |
 
+**Polarità riconosciuta da sola.** All'accensione il firmware controlla ogni pulsante: un pin che a riposo legge basso nonostante il pull-up interno ha un pull-down esterno ed è un pulsante verso 3V3 ("attivo alto"), e viene gestito di conseguenza. Funzionano quindi entrambi i montaggi (verso GND senza resistenze, oppure verso 3V3 con pull-down). `BTNS` mostra la polarità riconosciuta e quali pulsanti sono premuti: `BTNS,tema=GP14:L:0,schermata=GP15:L:0,grafico=GP12:H:0,schermo=GP11:L:0` (`L` = verso GND, `H` = verso 3V3, `1` = premuto).
+
+**Trovare il pin di un pulsante:** `python tools/pin_test.py` (con la GUI chiusa) scrive il GPIO e il pin fisico di ogni pulsante premuto, e segnala quelli collegati verso 3V3. Usa il comando `PINS,L` / `PINS,H` del firmware.
+
 I pulsanti sono facoltativi: ognuno va tra il pin GPIO e GND, **senza resistenze esterne** (il firmware attiva i pull-up interni del Pico, circa 50 kΩ) e non fanno nulla se non sono collegati. Eventuali pull-up esterni sono innocui se vanno a 3V3, **mai a 5 V**. Cambiare tema non cancella lo stato degli altri: ognuno mantiene i propri elementi, la propria schermata e il proprio nome.
 
 ### Impostazioni salvate nella flash

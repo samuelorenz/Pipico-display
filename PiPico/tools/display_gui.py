@@ -249,7 +249,7 @@ class App:
         ttk.Label(r3, text="Spegni lo schermo dopo (secondi, 0 = mai):").pack(side="left")
         ttk.Spinbox(r3, from_=0, to=3600, increment=30, textvariable=self.off_var, width=6).pack(side="left", padx=6)
         ttk.Button(r3, text="Imposta", command=self.send_off).pack(side="left")
-        ttk.Label(sb, text="Lo schermo si spegne quando non arriva nulla (per esempio con il PC spento) e riparte al primo dato.").pack(
+        ttk.Label(sb, wraplength=470, text="Lo schermo si spegne quando non arriva nulla (per esempio con il PC spento) e riparte al primo dato.").pack(
             anchor="w", padx=6, pady=(0, 6))
 
     def build_profiles_tab(self):
@@ -278,14 +278,14 @@ class App:
         ib = ttk.LabelFrame(f, text="Dispositivo")
         ib.pack(fill="x", padx=8, pady=8)
         self.advinfo = tk.StringVar(value="-")
-        tk.Label(ib, textvariable=self.advinfo, justify="left", anchor="w", font=("Consolas", 9)).pack(fill="x", padx=6, pady=6)
+        tk.Label(ib, textvariable=self.advinfo, justify="left", anchor="w", font=("Consolas", 9), wraplength=470).pack(fill="x", padx=6, pady=6)
         r = ttk.Frame(ib)
         r.pack(fill="x", padx=6, pady=(0, 6))
         ttk.Label(r, text="Velocita' SPI (MHz):").pack(side="left")
         ttk.Combobox(r, textvariable=self.spi_var, values=("20", "25", "33", "40", "50", "62"), width=5, state="readonly").pack(side="left", padx=6)
         ttk.Button(r, text="Imposta", command=self.send_spi).pack(side="left")
         ttk.Button(r, text="Misura i fotogrammi/s", command=lambda: self.send("FPS")).pack(side="left", padx=10)
-        ttk.Label(ib, text="40 e' il valore sicuro (33 MHz reali). 50 e' piu' fluido ma richiede fili corti: se il display mostra pixel sporchi, torna a 40.").pack(
+        ttk.Label(ib, wraplength=470, text="40 e' il valore sicuro (33 MHz reali). 50 e' piu' fluido ma richiede fili corti: se il display mostra pixel sporchi, torna a 40.").pack(
             anchor="w", padx=6, pady=(0, 6))
         fb = ttk.LabelFrame(f, text="Firmware")
         fb.pack(fill="x", padx=8, pady=4)
@@ -316,7 +316,7 @@ class App:
             row = ttk.Frame(self.theme_box)
             row.pack(fill="x", padx=6, pady=2)
             ttk.Radiobutton(row, text=title, value=tid, variable=self.theme_var, command=lambda t=tid: self.request_theme(t)).pack(anchor="w")
-            tk.Label(row, text=desc, fg=GRAY, anchor="w", justify="left", wraplength=470, font=("Segoe UI", 8)).pack(anchor="w", padx=22)
+            tk.Label(row, text=desc, fg=GRAY, anchor="w", justify="left", wraplength=420, font=("Segoe UI", 8)).pack(anchor="w", padx=22)
         b = BUILDS.get(self.theme)
         self.name_label.configure(text=b["name_label"] if b else "Nome:")
         if b:
